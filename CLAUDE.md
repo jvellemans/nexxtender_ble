@@ -69,6 +69,8 @@ pytest            # protocol, tariff, D-Bus pairing (needs `dbus-daemon`), HA in
 - Bump `version` in `manifest.json` for each release the user installs. They install
   by copying `custom_components/nexxtender_ble` into `/config/custom_components/`
   (or via HACS from this repo) and restarting HA.
+- HACS installs from `main`: once tests pass, push each fix to `main` as well
+  (fast-forward, no force-push). The maintainer has approved this standing rule.
 
 ## Open items
 
