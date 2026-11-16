@@ -165,7 +165,14 @@ class NexxtenderConfigFlow(ConfigFlow, domain=DOMAIN):
         if ble_device is None:
             return {"base": "not_in_range"}
         try:
-            data = await async_validate(address, int(passkey), ble_device)
+            data = await async_validate(
+                address,
+                int(passkey),
+                ble_device,
+                lambda: bluetooth.async_ble_device_from_address(
+                    self.hass, address, connectable=True
+                ),
+            )
         except pairing.InvalidPasskey as err:
             self._error_detail = str(err)
             return {CONF_PASSKEY: "invalid_passkey"}

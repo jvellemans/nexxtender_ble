@@ -392,6 +392,56 @@ async def test_config_flow_fallback_and_error_detail(hass, patched):
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
+async def test_config_flow_removes_stale_bond(hass, patched, charger):
+    """Field bug: setup showed 'auth_required'. BlueZ still had an old bond, so
+    pairing was skipped and the charger refused access. The flow must remove the
+    bond and pair again with the new PIN."""
+    pair, bt = patched
+    info = MagicMock(address=ADDRESS, service_uuids=[], rssi=-89)
+    info.name = "HOME"
+    bt.async_discovered_service_info.return_value = [info]
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ADDRESS: ADDRESS}
+    )
+    charger.encrypted = False  # stale bond: async_pair is a no-op
+
+    async def _unpair(*args):
+        charger.encrypted = True  # the next pairing is a real one
+
+    unpair = AsyncMock(side_effect=_unpair)
+    with patch("custom_components.nexxtender_ble.client.pairing.async_unpair", unpair), patch(
+        "custom_components.nexxtender_ble.client.asyncio.sleep", AsyncMock()
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_PASSKEY: "123456"}
+        )
+    unpair.assert_awaited_once()
+    assert pair.await_count >= 2
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_config_flow_auth_required_after_repair(hass, patched, charger):
+    """If the charger still refuses after re-pairing, show auth_required."""
+    _, bt = patched
+    info = MagicMock(address=ADDRESS, service_uuids=[], rssi=-89)
+    info.name = "HOME"
+    bt.async_discovered_service_info.return_value = [info]
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ADDRESS: ADDRESS}
+    )
+    charger.encrypted = False
+    with patch(
+        "custom_components.nexxtender_ble.client.pairing.async_unpair", AsyncMock()
+    ), patch("custom_components.nexxtender_ble.client.asyncio.sleep", AsyncMock()):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_PASSKEY: "123456"}
+        )
+    assert result["errors"] == {"base": "auth_required"}
+    assert "Unlikely Error" in result["description_placeholders"]["error_detail"]
+
+
 async def test_clock_fallback_and_diagnostics(hass, patched, charger):
     """If reading the clock back fails, show the time we set; diagnostics dump raw data."""
     orig = charger.write_gatt_char

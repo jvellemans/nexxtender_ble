@@ -8,7 +8,7 @@ The protocol knowledge comes from the community reverse-engineering in
 [geertmeersman/nexxtender](https://github.com/geertmeersman/nexxtender) (ESPHome)
 and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-ble).
 
-> **Status: v0.2.3. Pairing and connection confirmed on a real Nexxtender Home**
+> **Status: v0.2.4. Pairing and connection confirmed on a real Nexxtender Home**
 > (Bluetooth adapter passed through to the HA VM, weak signal).
 > The values and controls haven't been compared to the Nexxtmove app yet. If one
 > looks wrong, turn on debug logging (see Troubleshooting) and keep the raw payloads.
@@ -179,5 +179,5 @@ logger:
 ### Running the tests
 ```bash
 pip install pytest-homeassistant-custom-component
-pytest          # 33 tests: protocol, D-Bus pairing (needs dbus-daemon), HA entities/flow
+pytest          # 66 tests: protocol, tariff, D-Bus pairing (needs dbus-daemon), HA entities/flow
 ```

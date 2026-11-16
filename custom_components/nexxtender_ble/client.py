@@ -554,7 +554,10 @@ def _is_auth_error(err: Exception) -> bool:
 
 
 async def async_validate(
-    address: str, passkey: int, ble_device: BLEDevice
+    address: str,
+    passkey: int,
+    ble_device: BLEDevice,
+    get_device: Callable[[], BLEDevice | None] | None = None,
 ) -> NexxtenderData:
     """Pair and read the device information (config flow).
 
@@ -562,36 +565,63 @@ async def async_validate(
     Strategy 2 (fallback, if pairing was interrupted or the PIN was never
     requested): drop the connection and let BlueZ connect and pair in one go,
     which is quicker on a weak link; then connect again and read.
+
+    If BlueZ still holds an old bond (e.g. from an earlier setup), pairing is
+    skipped and the charger refuses access ("Unlikely Error"). In that case the
+    bond is removed and the whole sequence runs once more with the new PIN.
     """
-    path = (ble_device.details or {}).get("path")
-    client = NexxtenderClient(address, passkey, lambda: ble_device)
+    device = ble_device
+    client = NexxtenderClient(address, passkey, lambda: device)
 
     async def _connect() -> None:
         client._client = await establish_connection(  # noqa: SLF001
             BleakClientWithServiceCache,
-            ble_device,
+            device,
             f"Nexxtender {address}",
             max_attempts=3,
         )
 
+    async def _attempt() -> None:
+        path = (device.details or {}).get("path")
+        await _connect()
+        try:
+            await pairing.async_pair(address, passkey, path)
+        except (pairing.PairingInterrupted, pairing.PasskeyNotRequested) as err:
+            _LOGGER.warning(
+                "Pairing after connecting failed (%s); retrying with BlueZ "
+                "connecting and pairing directly",
+                err,
+            )
+            await client.disconnect()
+            await asyncio.sleep(2)
+            await pairing.async_pair(address, passkey, path)
+            _LOGGER.info("Direct BlueZ pairing succeeded")
+            if not client._link_up:  # noqa: SLF001
+                await _connect()
+        await client._verify_access()  # noqa: SLF001
+        await client._read_initial()  # noqa: SLF001
+
     try:
-        async with asyncio.timeout(180):
-            await _connect()
+        async with asyncio.timeout(240):
             try:
-                await pairing.async_pair(address, passkey, path)
-            except (pairing.PairingInterrupted, pairing.PasskeyNotRequested) as err:
-                _LOGGER.warning(
-                    "Pairing after connecting failed (%s); retrying with BlueZ "
-                    "connecting and pairing directly",
+                await _attempt()
+            except pairing.AuthenticationRequired as err:
+                _LOGGER.info(
+                    "Charger refused access (%s); removing the old BlueZ pairing "
+                    "and pairing again",
                     err,
                 )
                 await client.disconnect()
-                await asyncio.sleep(2)
-                await pairing.async_pair(address, passkey, path)
-                _LOGGER.info("Direct BlueZ pairing succeeded")
-                if not client.connected:
-                    await _connect()
-            await client._read_initial()  # noqa: SLF001
+                try:
+                    await pairing.async_unpair(address, (device.details or {}).get("path"))
+                except pairing.PairingError as unpair_err:
+                    _LOGGER.debug("Unpair failed: %s", unpair_err)
+                # BlueZ forgets the device on removal; give it time to see the
+                # charger advertise again before reconnecting.
+                await asyncio.sleep(5)
+                if get_device is not None and (fresh := get_device()) is not None:
+                    device = fresh
+                await _attempt()
     finally:
         await client.disconnect()
     return client.data
