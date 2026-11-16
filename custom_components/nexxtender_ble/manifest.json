@@ -1,0 +1,25 @@
+{
+  "domain": "nexxtender_ble",
+  "name": "Nexxtender BLE",
+  "bluetooth": [
+    {
+      "local_name": "HOME",
+      "connectable": true
+    },
+    {
+      "service_uuid": "fd47416a-95fb-4206-88b5-b4a8045f75c1",
+      "connectable": true
+    }
+  ],
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
+  "documentation": "https://github.com/jvellemans/nexxtender_ble",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/jvellemans/nexxtender_ble/issues",
+  "requirements": [],
+  "version": "0.2.3"
+}

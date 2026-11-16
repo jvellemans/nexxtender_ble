@@ -1,0 +1,221 @@
+{
+  "config": {
+    "flow_title": "Nexxtender ({address})",
+    "step": {
+      "user": {
+        "title": "Choose your Nexxtender",
+        "description": "Pick the charger from the nearby Bluetooth devices, or type its MAC address (for example AA:BB:CC:DD:EE:FF). Many chargers don't advertise a name; you can find the address in Settings → Devices & services → Bluetooth → Advertisement monitor.",
+        "data": {
+          "address": "Charger (MAC address)"
+        }
+      },
+      "passkey": {
+        "title": "Pair with the Nexxtender",
+        "description": "Enter the 6-digit Bluetooth PIN of charger {address}. Home Assistant will pair with it now, which can take up to a minute. Close the Nexxtmove app on your phone first: the charger accepts only one Bluetooth connection.{error_detail}",
+        "data": {
+          "passkey": "PIN"
+        }
+      }
+    },
+    "error": {
+      "invalid_passkey": "The charger asked for the PIN and then refused it.",
+      "pairing_failed": "Pairing failed. Check the logs; the Bluetooth adapter must be a local adapter on the Home Assistant host (not a Bluetooth proxy).",
+      "cannot_connect": "Could not connect to the charger. Make sure no phone is connected to it and try again.",
+      "not_in_range": "Home Assistant does not currently see this device. Check the address and that the charger is in range.",
+      "unknown": "Unexpected error, see the logs.",
+      "invalid_address": "This is not a valid Bluetooth MAC address.",
+      "pairing_interrupted": "Pairing was interrupted: the Bluetooth connection dropped or timed out. This is usually a weak signal (below about -80 dBm). Move the adapter closer to the charger and try again.",
+      "passkey_not_requested": "The charger refused pairing without asking for the PIN. Make sure no phone is connected to it, then try again.",
+      "auth_required": "Pairing seemed to work, but the charger still refuses access. Try again; if it persists, send the logs."
+    },
+    "abort": {
+      "already_configured": "This charger is already configured.",
+      "no_devices_found": "No Nexxtender found over Bluetooth. Check that Bluetooth works in Home Assistant and that the charger is in range.",
+      "not_in_range": "The charger is not in range of a connectable Bluetooth adapter.",
+      "reauth_successful": "PIN updated."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Bluetooth connected"
+      },
+      "plugged": {
+        "name": "Car plugged in"
+      },
+      "charging": {
+        "name": "Charging"
+      },
+      "off_peak": {
+        "name": "Off-peak hours"
+      }
+    },
+    "button": {
+      "start_charge_default": {
+        "name": "Start charging"
+      },
+      "start_charge_max": {
+        "name": "Start charging (max)"
+      },
+      "start_charge_eco": {
+        "name": "Start charging (eco)"
+      },
+      "start_charge_auto": {
+        "name": "Start charging (auto)"
+      },
+      "stop_charge": {
+        "name": "Stop charging"
+      },
+      "sync_time": {
+        "name": "Sync clock"
+      },
+      "refresh_config": {
+        "name": "Refresh configuration"
+      }
+    },
+    "number": {
+      "max_car_charging_speed": {
+        "name": "Maximum car charging speed"
+      },
+      "max_available_capacity": {
+        "name": "Maximum available capacity"
+      },
+      "offloading_minimum": {
+        "name": "Offloading minimum"
+      },
+      "peak_consumption_limit": {
+        "name": "Peak consumption limit"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "eco_private": "Eco private",
+          "max_private": "Max private",
+          "eco_open": "Eco open",
+          "max_open": "Max open"
+        }
+      },
+      "tariff_profile": {
+        "name": "Off-peak calendar",
+        "state": {
+          "brussels_flanders": "Brussels / Flanders: 22:00-07:00 + weekend",
+          "wallonia_2026": "Wallonia 2026: 22:00-07:00 + 11:00-17:00",
+          "shifted_21_6": "21:00-06:00 + weekend"
+        }
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "unplugged": "Unplugged",
+          "plugged": "Plugged in",
+          "charging": "Charging",
+          "fault": "Fault"
+        }
+      },
+      "session_state": {
+        "name": "Session state",
+        "state": {
+          "started": "Started",
+          "charging": "Charging",
+          "stopped": "Stopped",
+          "unknown": "Unknown"
+        }
+      },
+      "session_energy": {
+        "name": "Session energy"
+      },
+      "session_duration": {
+        "name": "Session duration"
+      },
+      "phase_count": {
+        "name": "Charging phase count"
+      },
+      "car_power": {
+        "name": "Car power"
+      },
+      "car_current": {
+        "name": "Car current"
+      },
+      "car_current_l1": {
+        "name": "Car current L1"
+      },
+      "car_current_l2": {
+        "name": "Car current L2"
+      },
+      "car_current_l3": {
+        "name": "Car current L3"
+      },
+      "car_power_p1": {
+        "name": "Car power L1"
+      },
+      "car_power_p2": {
+        "name": "Car power L2"
+      },
+      "car_power_p3": {
+        "name": "Car power L3"
+      },
+      "grid_power": {
+        "name": "Grid power"
+      },
+      "grid_current_l1": {
+        "name": "Grid current L1"
+      },
+      "grid_current_l2": {
+        "name": "Grid current L2"
+      },
+      "grid_current_l3": {
+        "name": "Grid current L3"
+      },
+      "grid_consumed": {
+        "name": "Grid consumed power"
+      },
+      "available_current": {
+        "name": "Available current"
+      },
+      "min_car_charging_speed": {
+        "name": "Minimum car charging speed"
+      },
+      "connection_type": {
+        "name": "Connection type",
+        "state": {
+          "mono_tri_n": "Mono / Tri+N",
+          "tri": "Tri",
+          "unknown": "Unknown"
+        }
+      },
+      "charging_phases": {
+        "name": "Charging phases"
+      },
+      "week_schedule": {
+        "name": "Off-peak schedule (week)"
+      },
+      "weekend_schedule": {
+        "name": "Off-peak schedule (weekend)"
+      },
+      "charger_time": {
+        "name": "Charger clock"
+      },
+      "generic_status": {
+        "name": "Protocol status"
+      },
+      "firmware": {
+        "name": "Firmware"
+      }
+    },
+    "switch": {
+      "keep_connected": {
+        "name": "Hold Bluetooth connection"
+      },
+      "smart_charging": {
+        "name": "Smart charging (off-peak)"
+      },
+      "charge_now": {
+        "name": "Charge now"
+      }
+    }
+  }
+}

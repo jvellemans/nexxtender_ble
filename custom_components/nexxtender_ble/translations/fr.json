@@ -1,0 +1,221 @@
+{
+  "config": {
+    "flow_title": "Nexxtender ({address})",
+    "step": {
+      "user": {
+        "title": "Choisissez votre Nexxtender",
+        "description": "Choisissez la borne parmi les appareils Bluetooth à proximité, ou tapez son adresse MAC (par exemple AA:BB:CC:DD:EE:FF). Beaucoup de bornes n'annoncent pas de nom ; l'adresse se trouve dans Paramètres → Appareils et services → Bluetooth → Moniteur de publicité.",
+        "data": {
+          "address": "Borne (adresse MAC)"
+        }
+      },
+      "passkey": {
+        "title": "Appairer la Nexxtender",
+        "description": "Entrez le code PIN Bluetooth à 6 chiffres de la borne {address}. Home Assistant va s'appairer maintenant, ce qui peut prendre jusqu'à une minute. Fermez d'abord l'application Nexxtmove sur votre téléphone : la borne n'accepte qu'une seule connexion Bluetooth.{error_detail}",
+        "data": {
+          "passkey": "Code PIN"
+        }
+      }
+    },
+    "error": {
+      "invalid_passkey": "La borne a demandé le code PIN puis l'a refusé.",
+      "invalid_address": "Ce n'est pas une adresse MAC Bluetooth valide.",
+      "pairing_failed": "L'appairage a échoué. Consultez les journaux ; l'adaptateur Bluetooth doit être un adaptateur local de l'hôte Home Assistant (pas un proxy Bluetooth).",
+      "cannot_connect": "Impossible de se connecter à la borne. Vérifiez qu'aucun téléphone n'y est connecté et réessayez.",
+      "not_in_range": "Home Assistant ne voit pas cet appareil actuellement. Vérifiez l'adresse et que la borne est à portée.",
+      "unknown": "Erreur inattendue, consultez les journaux.",
+      "pairing_interrupted": "L'appairage a été interrompu : la connexion Bluetooth a coupé ou a expiré. C'est en général un signal trop faible (en dessous d'environ -80 dBm). Rapprochez l'adaptateur de la borne et réessayez.",
+      "passkey_not_requested": "La borne a refusé l'appairage sans demander le code PIN. Vérifiez qu'aucun téléphone n'y est connecté, puis réessayez.",
+      "auth_required": "L'appairage semble avoir réussi, mais la borne refuse toujours l'accès. Réessayez ; si ça persiste, envoyez les journaux."
+    },
+    "abort": {
+      "already_configured": "Cette borne est déjà configurée.",
+      "no_devices_found": "Aucune Nexxtender trouvée en Bluetooth.",
+      "not_in_range": "La borne n'est pas à portée d'un adaptateur Bluetooth.",
+      "reauth_successful": "Code PIN mis à jour."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Bluetooth connecté"
+      },
+      "plugged": {
+        "name": "Voiture branchée"
+      },
+      "charging": {
+        "name": "En charge"
+      },
+      "off_peak": {
+        "name": "Heures creuses"
+      }
+    },
+    "button": {
+      "start_charge_default": {
+        "name": "Démarrer la charge"
+      },
+      "start_charge_max": {
+        "name": "Démarrer la charge (max)"
+      },
+      "start_charge_eco": {
+        "name": "Démarrer la charge (éco)"
+      },
+      "start_charge_auto": {
+        "name": "Démarrer la charge (auto)"
+      },
+      "stop_charge": {
+        "name": "Arrêter la charge"
+      },
+      "sync_time": {
+        "name": "Synchroniser l'horloge"
+      },
+      "refresh_config": {
+        "name": "Relire la configuration"
+      }
+    },
+    "number": {
+      "max_car_charging_speed": {
+        "name": "Vitesse de charge maximale"
+      },
+      "max_available_capacity": {
+        "name": "Capacité maximale disponible"
+      },
+      "offloading_minimum": {
+        "name": "Minimum de délestage"
+      },
+      "peak_consumption_limit": {
+        "name": "Limite de pic de consommation"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "eco_private": "Éco privé",
+          "max_private": "Max privé",
+          "eco_open": "Éco ouvert",
+          "max_open": "Max ouvert"
+        }
+      },
+      "tariff_profile": {
+        "name": "Grille heures creuses",
+        "state": {
+          "brussels_flanders": "Bruxelles / Flandre : 22h-7h + week-end",
+          "wallonia_2026": "Wallonie 2026 : 22h-7h + 11h-17h",
+          "shifted_21_6": "21h-6h + week-end"
+        }
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Statut",
+        "state": {
+          "unplugged": "Débranchée",
+          "plugged": "Branchée",
+          "charging": "En charge",
+          "fault": "Défaut"
+        }
+      },
+      "session_state": {
+        "name": "État de la session",
+        "state": {
+          "started": "Démarrée",
+          "charging": "En charge",
+          "stopped": "Arrêtée",
+          "unknown": "Inconnu"
+        }
+      },
+      "session_energy": {
+        "name": "Énergie de la session"
+      },
+      "session_duration": {
+        "name": "Durée de la session"
+      },
+      "phase_count": {
+        "name": "Nombre de phases en charge"
+      },
+      "car_power": {
+        "name": "Puissance voiture"
+      },
+      "car_current": {
+        "name": "Courant voiture"
+      },
+      "car_current_l1": {
+        "name": "Courant voiture L1"
+      },
+      "car_current_l2": {
+        "name": "Courant voiture L2"
+      },
+      "car_current_l3": {
+        "name": "Courant voiture L3"
+      },
+      "car_power_p1": {
+        "name": "Puissance voiture L1"
+      },
+      "car_power_p2": {
+        "name": "Puissance voiture L2"
+      },
+      "car_power_p3": {
+        "name": "Puissance voiture L3"
+      },
+      "grid_power": {
+        "name": "Puissance réseau"
+      },
+      "grid_current_l1": {
+        "name": "Courant réseau L1"
+      },
+      "grid_current_l2": {
+        "name": "Courant réseau L2"
+      },
+      "grid_current_l3": {
+        "name": "Courant réseau L3"
+      },
+      "grid_consumed": {
+        "name": "Puissance consommée réseau"
+      },
+      "available_current": {
+        "name": "Courant disponible"
+      },
+      "min_car_charging_speed": {
+        "name": "Vitesse de charge minimale"
+      },
+      "connection_type": {
+        "name": "Type de raccordement",
+        "state": {
+          "mono_tri_n": "Mono / Tri+N",
+          "tri": "Tri",
+          "unknown": "Inconnu"
+        }
+      },
+      "charging_phases": {
+        "name": "Phases de charge"
+      },
+      "week_schedule": {
+        "name": "Heures creuses (semaine)"
+      },
+      "weekend_schedule": {
+        "name": "Heures creuses (week-end)"
+      },
+      "charger_time": {
+        "name": "Horloge de la borne"
+      },
+      "generic_status": {
+        "name": "Statut du protocole"
+      },
+      "firmware": {
+        "name": "Firmware"
+      }
+    },
+    "switch": {
+      "keep_connected": {
+        "name": "Garder la connexion Bluetooth"
+      },
+      "smart_charging": {
+        "name": "Charge pilotée (heures creuses)"
+      },
+      "charge_now": {
+        "name": "Charger maintenant"
+      }
+    }
+  }
+}
