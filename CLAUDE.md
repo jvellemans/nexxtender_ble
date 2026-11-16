@@ -71,6 +71,8 @@ pytest            # protocol, tariff, D-Bus pairing (needs `dbus-daemon`), HA in
   (or via HACS from this repo) and restarting HA.
 - HACS installs from `main`: once tests pass, push each fix to `main` as well
   (fast-forward, no force-push). The maintainer has approved this standing rule.
+  Bumping `version` in `manifest.json` on `main` makes `.github/workflows/release.yml`
+  publish a `vX.Y.Z` GitHub release; HACS only offers updates through releases.
 
 ## Open items
 
