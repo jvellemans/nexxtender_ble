@@ -45,65 +45,17 @@
       },
       "charging": {
         "name": "En charge"
-      },
-      "off_peak": {
-        "name": "Heures creuses"
       }
     },
     "button": {
       "start_charge_default": {
         "name": "Démarrer la charge"
       },
-      "start_charge_max": {
-        "name": "Démarrer la charge (max)"
-      },
-      "start_charge_eco": {
-        "name": "Démarrer la charge (éco)"
-      },
-      "start_charge_auto": {
-        "name": "Démarrer la charge (auto)"
-      },
       "stop_charge": {
         "name": "Arrêter la charge"
       },
-      "sync_time": {
-        "name": "Synchroniser l'horloge"
-      },
       "refresh_config": {
         "name": "Relire la configuration"
-      }
-    },
-    "number": {
-      "max_car_charging_speed": {
-        "name": "Vitesse de charge maximale"
-      },
-      "max_available_capacity": {
-        "name": "Capacité maximale disponible"
-      },
-      "offloading_minimum": {
-        "name": "Minimum de délestage"
-      },
-      "peak_consumption_limit": {
-        "name": "Limite de pic de consommation"
-      }
-    },
-    "select": {
-      "mode": {
-        "name": "Mode",
-        "state": {
-          "eco_private": "Éco privé",
-          "max_private": "Max privé",
-          "eco_open": "Éco ouvert",
-          "max_open": "Max ouvert"
-        }
-      },
-      "tariff_profile": {
-        "name": "Grille heures creuses",
-        "state": {
-          "brussels_flanders": "Bruxelles / Flandre : 22h-7h + week-end",
-          "wallonia_2026": "Wallonie 2026 : 22h-7h + 11h-17h",
-          "shifted_21_6": "21h-6h + week-end"
-        }
       }
     },
     "sensor": {
@@ -204,17 +156,32 @@
       },
       "firmware": {
         "name": "Firmware"
+      },
+      "max_car_charging_speed": {
+        "name": "Vitesse de charge maximale"
+      },
+      "max_available_capacity": {
+        "name": "Capacité maximale disponible"
+      },
+      "offloading_minimum": {
+        "name": "Minimum de délestage"
+      },
+      "peak_consumption_limit": {
+        "name": "Limite de pic de consommation"
+      },
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "eco_private": "Éco privé",
+          "max_private": "Max privé",
+          "eco_open": "Éco ouvert",
+          "max_open": "Max ouvert"
+        }
       }
     },
     "switch": {
       "keep_connected": {
         "name": "Garder la connexion Bluetooth"
-      },
-      "smart_charging": {
-        "name": "Charge pilotée (heures creuses)"
-      },
-      "charge_now": {
-        "name": "Charger maintenant"
       }
     }
   }

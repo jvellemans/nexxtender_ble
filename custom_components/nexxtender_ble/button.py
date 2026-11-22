@@ -29,36 +29,10 @@ BUTTONS: tuple[NexxtenderButtonDescription, ...] = (
         press_fn=lambda c: c.send_command(p.CMD_START_CHARGE_DEFAULT),
     ),
     NexxtenderButtonDescription(
-        key="start_charge_max",
-        translation_key="start_charge_max",
-        icon="mdi:speedometer",
-        press_fn=lambda c: c.send_command(p.CMD_START_CHARGE_MAX),
-    ),
-    NexxtenderButtonDescription(
-        key="start_charge_eco",
-        translation_key="start_charge_eco",
-        icon="mdi:leaf",
-        press_fn=lambda c: c.send_command(p.CMD_START_CHARGE_ECO),
-    ),
-    NexxtenderButtonDescription(
-        key="start_charge_auto",
-        translation_key="start_charge_auto",
-        icon="mdi:auto-mode",
-        entity_registry_enabled_default=False,
-        press_fn=lambda c: c.send_command(p.CMD_START_CHARGE_AUTO),
-    ),
-    NexxtenderButtonDescription(
         key="stop_charge",
         translation_key="stop_charge",
         icon="mdi:stop-circle-outline",
         press_fn=lambda c: c.send_command(p.CMD_STOP_CHARGE),
-    ),
-    NexxtenderButtonDescription(
-        key="sync_time",
-        translation_key="sync_time",
-        icon="mdi:clock-check-outline",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        press_fn=lambda c: c.sync_time(),
     ),
     NexxtenderButtonDescription(
         key="refresh_config",

@@ -170,17 +170,18 @@ class NexxtenderClient:
                 raise
         self._notify_listeners()
         # Configuration and clock are slower handshakes; failures there should
-        # not drop the connection.
+        # not drop the connection. Nothing below writes to the charger.
         try:
             await self.refresh_config()
         except NexxtenderError as err:
             self._record("errors", "config", str(err))
             _LOGGER.warning("Could not read Nexxtender configuration: %s", err)
+        # Read-only: the clock is read, never set, on connect.
         try:
-            await self.sync_time()
+            await self.read_time()
         except NexxtenderError as err:
-            self._record("errors", "time_sync", str(err))
-            _LOGGER.warning("Could not set the Nexxtender clock: %s", err)
+            self._record("errors", "time_read", str(err))
+            _LOGGER.debug("Could not read the Nexxtender clock: %s", err)
 
     async def disconnect(self) -> None:
         self._ready = False
@@ -520,6 +521,12 @@ class NexxtenderClient:
                     _LOGGER.warning(
                         "The charger clock is still %.0f s off after setting it", drift
                     )
+        self._notify_listeners()
+
+    async def read_time(self) -> None:
+        """Read the charger clock (no write to the charger)."""
+        async with self._cmd_lock:
+            await self._read_time_locked()
         self._notify_listeners()
 
     async def _read_time_locked(self) -> None:

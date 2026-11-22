@@ -24,18 +24,6 @@ KEEP_CONNECTED = SwitchEntityDescription(
 )
 
 
-SMART_CHARGING = SwitchEntityDescription(
-    key="smart_charging",
-    translation_key="smart_charging",
-    icon="mdi:home-lightning-bolt-outline",
-)
-
-CHARGE_NOW = SwitchEntityDescription(
-    key="charge_now",
-    translation_key="charge_now",
-    icon="mdi:flash",
-)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -43,13 +31,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities(
-        [
-            NexxtenderKeepConnectedSwitch(coordinator, KEEP_CONNECTED),
-            NexxtenderSmartChargingSwitch(coordinator, SMART_CHARGING),
-            NexxtenderChargeNowSwitch(coordinator, CHARGE_NOW),
-        ]
-    )
+    async_add_entities([NexxtenderKeepConnectedSwitch(coordinator, KEEP_CONNECTED)])
 
 
 class NexxtenderKeepConnectedSwitch(NexxtenderEntity, SwitchEntity):
@@ -64,35 +46,3 @@ class NexxtenderKeepConnectedSwitch(NexxtenderEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_keep_connected(False)
-
-
-class NexxtenderSmartChargingSwitch(NexxtenderEntity, SwitchEntity):
-    """Home Assistant decides when to charge (off-peak hours)."""
-
-    _available_when_disconnected = True
-
-    @property
-    def is_on(self) -> bool:
-        return self.coordinator.smart.enabled
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.smart.async_set_enabled(True)
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.smart.async_set_enabled(False)
-
-
-class NexxtenderChargeNowSwitch(NexxtenderEntity, SwitchEntity):
-    """Charge right away, even in peak hours, until the car is unplugged."""
-
-    _available_when_disconnected = True
-
-    @property
-    def is_on(self) -> bool:
-        return self.coordinator.smart.charge_now
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.smart.async_set_charge_now(True)
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.smart.async_set_charge_now(False)

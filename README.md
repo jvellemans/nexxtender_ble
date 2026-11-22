@@ -8,55 +8,40 @@ The protocol knowledge comes from the community reverse-engineering in
 [geertmeersman/nexxtender](https://github.com/geertmeersman/nexxtender) (ESPHome)
 and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-ble).
 
-> **Status: v0.2.4. Pairing and connection confirmed on a real Nexxtender Home**
-> (Bluetooth adapter passed through to the HA VM, weak signal).
-> The values and controls haven't been compared to the Nexxtmove app yet. If one
-> looks wrong, turn on debug logging (see Troubleshooting) and keep the raw payloads.
+> **Status: v0.3.0, read-only plus Start/Stop.** Pairing and connection confirmed
+> on a real Nexxtender Home (Bluetooth adapter passed through to the HA VM, weak
+> signal). To keep things safe while it's being tested, the integration doesn't
+> change any setting on the charger: it reads values and can only start or stop
+> a charging session. If a value looks wrong, turn on debug logging (see
+> Troubleshooting) and keep the raw payloads.
 
 ## What you get
 
 | Type | Entities |
 |---|---|
-| Sensors | Status (unplugged / plugged / charging / fault), session state, session energy (kWh), session duration, car power, car current (total + L1–L3), grid power, grid current L1–L3, grid consumed power, available current, charging phase count |
+| Sensors | Status (unplugged / plugged / charging / fault), session state, session energy (kWh), session duration, car power, car current (total + L1–L3), grid power, grid current L1–L3, grid consumed power, available current, charging phase count, **mode** (Eco/Max, private/open) |
 | Binary sensors | Car plugged in, Charging, Bluetooth connected |
-| Select | Mode: Eco private / Max private / Eco open / Max open |
-| Numbers | Maximum car charging speed, Maximum available capacity, Offloading minimum, Peak consumption limit |
-| Buttons | Start charging, Start charging (max), Start charging (eco), Stop charging, Sync clock, Refresh configuration |
-| Switch | Hold Bluetooth connection (turn off to let the phone app connect) |
-| Diagnostics | Charger clock, off-peak schedules, connection type, min charging speed, firmware |
+| Buttons | Start charging, Stop charging, Refresh configuration |
+| Switch | Hold Bluetooth connection (turn off to let the phone app connect; this doesn't touch the charger) |
+| Diagnostics | Charger clock, off-peak schedules, max charging speed, max available capacity, offloading minimum, peak consumption limit, connection type, min charging speed, firmware |
 
 Session energy can be added to the **Energy dashboard** as an EV charger consumption.
 
-## Smart charging (Home Assistant decides when to charge)
+### What the integration sends to the charger
 
-Turn on **Smart charging (off-peak)** and pick your **Off-peak calendar**:
+- **On every connection:** Bluetooth pairing with your PIN, then read requests only
+  (status, values, configuration, clock).
+- **Every 15 s:** it reads the current values.
+- **Start charging / Stop charging buttons:** one command each, only when you
+  press them. *Start charging* uses the mode set on the charger (in Eco mode the
+  charger may wait for its own off-peak window).
 
-| Calendar | Off-peak hours |
-|---|---|
-| Brussels / Flanders | 22:00–07:00 on weekdays + the whole weekend (Fri 22:00 → Mon 07:00) |
-| Wallonia 2026 | 22:00–07:00 and 11:00–17:00, every day (since 1 Jan 2026) |
-| 21:00–06:00 + weekend | The few ORES/Fluvius municipalities with shifted hours |
-
-What happens:
-- The charger is switched to **Max private**, so it never starts by itself when you
-  plug in.
-- Car plugged in during off-peak hours → HA sends *Start charging (max)*. Off-peak
-  ends while charging → HA sends *Stop charging*.
-- **Charge now** overrides this (charges right away, even in peak hours) and turns
-  itself off when the car is unplugged.
-- If the car doesn't start charging (battery full), HA tries at most 3 times, 2 minutes
-  apart, then leaves it alone.
-- The **Off-peak hours** binary sensor shows the current state; its attributes show
-  the next change and the last action taken.
-- To stop a session by hand during off-peak hours, turn smart charging off first.
-  Otherwise HA restarts it after a couple of minutes.
-
-Public holidays aren't handled. In Brussels, weekday public holidays are off-peak
-too, so on those days the car simply waits until 22:00.
+Nothing else is written: no mode change, no current limit, no clock setting. Change
+those in the Nexxtmove app (turn off *Hold Bluetooth connection* first).
 
 **Modes:** *Eco* charges only in the off-peak window configured in the charger (and
 respects the offloading settings). *Max* charges at full speed. *Private* means a
-session must be started (badge, app, or the *Start charging* buttons). *Open* means
+session must be started (badge, app, or the *Start charging* button). *Open* means
 any plugged-in car starts charging.
 
 ## 1. Give the Home Assistant VM the laptop's Bluetooth (Proxmox)
@@ -172,12 +157,13 @@ logger:
   charger's passkey request with your PIN, and lets BlueZ store the bond.
 - `client.py`: one persistent BLE connection with notifications (status, grid, car,
   protocol status/data), polling of the read-only characteristic every 15 s, and the
-  request/ready/write/success handshakes for config and clock changes.
-- `coordinator.py`: reconnects with back-off, keeps the clock synced daily, and pushes
+  request/ready/write/success handshakes (config and clock writes exist in the
+  client but are not used since 0.3.0).
+- `coordinator.py`: reconnects with back-off and pushes
   updates to the entities.
 
 ### Running the tests
 ```bash
 pip install pytest-homeassistant-custom-component
-pytest          # 66 tests: protocol, tariff, D-Bus pairing (needs dbus-daemon), HA entities/flow
+pytest          # 47 tests: protocol, D-Bus pairing (needs dbus-daemon), HA entities/flow
 ```

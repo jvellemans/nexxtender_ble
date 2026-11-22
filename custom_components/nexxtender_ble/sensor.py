@@ -174,6 +174,47 @@ SENSORS: tuple[NexxtenderSensorDescription, ...] = (
     ),
     # --- configuration (read-only views) -------------------------------------
     NexxtenderSensorDescription(
+        key="mode",
+        translation_key="mode",
+        icon="mdi:ev-station",
+        device_class=SensorDeviceClass.ENUM,
+        options=p.MODES,
+        value_fn=lambda d: (d.config.mode if d.config and d.config.mode else None)
+        or (p.cbor_mode(d.cbor) if d.cbor else None),
+    ),
+    NexxtenderSensorDescription(
+        key="max_car_charging_speed",
+        translation_key="max_car_charging_speed",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=A,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_cfg("i_evse_max"),
+    ),
+    NexxtenderSensorDescription(
+        key="max_available_capacity",
+        translation_key="max_available_capacity",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=A,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_cfg("i_max"),
+    ),
+    NexxtenderSensorDescription(
+        key="offloading_minimum",
+        translation_key="offloading_minimum",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=A,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_cfg("i_min"),
+    ),
+    NexxtenderSensorDescription(
+        key="peak_consumption_limit",
+        translation_key="peak_consumption_limit",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=A,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_cbor(p.CBOR_I_CAPACITY),
+    ),
+    NexxtenderSensorDescription(
         key="min_car_charging_speed",
         translation_key="min_car_charging_speed",
         device_class=SensorDeviceClass.CURRENT,

@@ -17,7 +17,6 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from . import pairing
 from .client import NexxtenderClient, NexxtenderError, NotConnected
-from .smart_charging import SmartCharger
 from .const import (
     CONF_PASSKEY,
     DOMAIN,
@@ -26,7 +25,6 @@ from .const import (
     POLL_INTERVAL_SECONDS,
     RECONNECT_MAX_SECONDS,
     RECONNECT_MIN_SECONDS,
-    TIME_SYNC_INTERVAL_HOURS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,7 +49,6 @@ class NexxtenderCoordinator:
         self._stopping = False
         self._task: asyncio.Task | None = None
         self.last_error: str | None = None
-        self.smart = SmartCharger(self)
 
     # ------------------------------------------------------------- listeners
 
@@ -72,17 +69,7 @@ class NexxtenderCoordinator:
 
     @callback
     def _async_notify(self) -> None:
-        """Data changed: refresh entities and re-evaluate smart charging."""
-        self.async_notify_listeners()
-        self.smart.async_evaluate()
-
-    @callback
-    def async_set_option(self, key: str, value) -> None:
-        if self.entry.options.get(key) == value:
-            return
-        self.hass.config_entries.async_update_entry(
-            self.entry, options={**self.entry.options, key: value}
-        )
+        """Data changed: refresh entities."""
         self.async_notify_listeners()
 
     # -------------------------------------------------------------- lifecycle
@@ -104,19 +91,6 @@ class NexxtenderCoordinator:
         self._unsubs.append(
             async_track_time_interval(
                 self.hass, self._async_poll, timedelta(seconds=POLL_INTERVAL_SECONDS)
-            )
-        )
-        self._unsubs.append(
-            async_track_time_interval(
-                self.hass,
-                self._async_daily_time_sync,
-                timedelta(hours=TIME_SYNC_INTERVAL_HOURS),
-            )
-        )
-        # Off-peak boundaries are time based: re-evaluate every minute.
-        self._unsubs.append(
-            async_track_time_interval(
-                self.hass, self.smart.async_evaluate, timedelta(minutes=1)
             )
         )
         # Reconnect quickly when the charger shows up again.
@@ -258,13 +232,6 @@ class NexxtenderCoordinator:
             # Encryption lost on a live link: reconnect, which re-pairs.
             _LOGGER.info("Charger refused access during polling (%s); reconnecting", err)
             await self.client.disconnect()
-
-    async def _async_daily_time_sync(self, _now=None) -> None:
-        if self.client.connected:
-            try:
-                await self.client.sync_time()
-            except NexxtenderError as err:
-                _LOGGER.debug("Time sync failed: %s", err)
 
     # ----------------------------------------------------------- actions API
 

@@ -196,12 +196,32 @@ async def test_setup_reads_everything(hass, patched, charger):
     assert _state(hass, "binary_sensor.nexxtender_charging") == "on"
     assert float(_state(hass, "sensor.nexxtender_session_energy")) == pytest.approx(1.234)
     assert _state(hass, "sensor.nexxtender_car_power") == "7400"
-    assert _state(hass, "select.nexxtender_mode") == "eco_private"
-    assert _state(hass, "number.nexxtender_maximum_car_charging_speed") == "16.0"
-    assert _state(hass, "number.nexxtender_peak_consumption_limit") == "16.0"
+    assert _state(hass, "sensor.nexxtender_mode") == "eco_private"
+    assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"
+    assert _state(hass, "sensor.nexxtender_peak_consumption_limit") == "16"
     assert _state(hass, "sensor.nexxtender_connection_type") == "tri"
-    # Clock was synchronised on connect.
-    assert charger.clock > 1_700_000_000
+    # The clock is read, not set.
+    assert charger.clock == 0
+    assert entry_clock(hass) is not None
+
+
+def entry_clock(hass):
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    return entry.runtime_data.client.data.charger_time
+
+
+READ_COMMANDS = {p.CMD_CONFIG_READ, p.CMD_CBOR_CONFIG_READ, p.CMD_TIME_READ}
+
+
+async def test_connecting_never_writes_to_the_charger(hass, patched, charger):
+    """Read-only: connecting, polling and notifications only send read requests."""
+    entry = await _setup(hass)
+    await entry.runtime_data._async_poll()
+    charger.set_status("B")
+    await hass.async_block_till_done()
+    assert charger.writes, "expected read requests"
+    assert all(u == CHAR_GENERIC_COMMAND and d in READ_COMMANDS for u, d in charger.writes)
+    assert p.parse_config(charger.config).mode == p.MODE_ECO_PRIVATE
 
 
 async def test_notifications_update_state(hass, patched, charger):
@@ -216,36 +236,32 @@ async def test_notifications_update_state(hass, patched, charger):
     assert _state(hass, "binary_sensor.nexxtender_car_plugged_in") == "off"
 
 
-async def test_change_mode_and_limits(hass, patched, charger):
-    await _setup(hass)
-    await hass.services.async_call(
-        "select", "select_option",
-        {"entity_id": "select.nexxtender_mode", "option": "max_open"}, blocking=True,
-    )
-    assert p.parse_config(charger.config).mode == "max_open"
-    assert _state(hass, "select.nexxtender_mode") == "max_open"
+async def test_old_write_entities_are_removed(hass, patched, charger):
+    """Entities from 0.2.x that wrote to the charger disappear on upgrade."""
+    from homeassistant.helpers import entity_registry as er
 
-    await hass.services.async_call(
-        "number", "set_value",
-        {"entity_id": "number.nexxtender_maximum_car_charging_speed", "value": 20},
-        blocking=True,
+    registry = er.async_get(hass)
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS,
+        data={CONF_ADDRESS: ADDRESS, CONF_PASSKEY: "123456"},
     )
-    cfg = p.parse_config(charger.config)
-    assert (cfg.i_evse_max, cfg.mode, cfg.i_max) == (20, "max_open", 25)
-
-    await hass.services.async_call(
-        "number", "set_value",
-        {"entity_id": "number.nexxtender_peak_consumption_limit", "value": 25},
-        blocking=True,
-    )
-    assert charger.cbor_entries[19] == 25
-    assert _state(hass, "number.nexxtender_peak_consumption_limit") == "25.0"
+    entry.add_to_hass(hass)
+    old = [
+        registry.async_get_or_create(domain, DOMAIN, f"{ADDRESS}_{key}", config_entry=entry).entity_id
+        for domain, key in (("select", "mode"), ("number", "max_car_charging_speed"),
+                            ("switch", "smart_charging"), ("button", "sync_time"))
+    ]
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert all(registry.async_get(entity_id) is None for entity_id in old)
+    assert hass.states.get("select.nexxtender_mode") is None
+    await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_buttons_send_commands(hass, patched, charger):
     await _setup(hass)
     for entity, cmd in (
-        ("button.nexxtender_start_charging_max", p.CMD_START_CHARGE_MAX),
+        ("button.nexxtender_start_charging", p.CMD_START_CHARGE_DEFAULT),
         ("button.nexxtender_stop_charging", p.CMD_STOP_CHARGE),
     ):
         await hass.services.async_call("button", "press", {"entity_id": entity}, blocking=True)
@@ -443,7 +459,7 @@ async def test_config_flow_auth_required_after_repair(hass, patched, charger):
 
 
 async def test_clock_fallback_and_diagnostics(hass, patched, charger):
-    """If reading the clock back fails, show the time we set; diagnostics dump raw data."""
+    """If the clock read fails, the connection still works; diagnostics dump raw data."""
     orig = charger.write_gatt_char
 
     async def no_time_read(uuid, data, response=None):
@@ -463,7 +479,8 @@ async def test_clock_fallback_and_diagnostics(hass, patched, charger):
             await asyncio.sleep(0.02)
             if entry.runtime_data.client.data.charger_time:
                 break
-    assert _state(hass, "sensor.nexxtender_charger_clock") not in ("unavailable", "unknown")
+    assert entry.runtime_data.client.connected
+    assert _state(hass, "sensor.nexxtender_charger_clock") == "unavailable"
     week = _state(hass, "sensor.nexxtender_off_peak_schedule_week")
     assert week.endswith(":00") and week.split(" - ")[0][3:] == "00"
 
@@ -478,108 +495,6 @@ async def test_clock_fallback_and_diagnostics(hass, patched, charger):
     assert "config" in diag["extra"]["raw"]
     assert "time_read" in diag["extra"]["errors"]
     assert any("write dd 0240" in line for line in diag["extra"]["status_log"])
-
-
-
-def _commands(charger):
-    return [d for u, d in charger.writes if u == CHAR_GENERIC_COMMAND
-            and d in (p.CMD_START_CHARGE_MAX, p.CMD_STOP_CHARGE)]
-
-
-async def _settle(hass):
-    for _ in range(5):
-        await hass.async_block_till_done()
-        await asyncio.sleep(0.01)
-
-
-async def test_smart_charging_cycle(hass, patched, charger):
-    from datetime import datetime
-
-    from homeassistant.util import dt as dt_util
-
-    entry = await _setup(hass)
-    smart = entry.runtime_data.smart
-    tz = dt_util.get_default_time_zone()
-    clock = {"now": datetime(2026, 11, 18, 15, 0, tzinfo=tz)}  # Wednesday, peak
-    smart.now = lambda: clock["now"]
-    charger.set_status("B")  # plugged in, not charging
-    await _settle(hass)
-    charger.writes.clear()
-
-    # Turning smart charging on switches the charger to Max private; peak -> no start.
-    await hass.services.async_call(
-        "switch", "turn_on",
-        {"entity_id": "switch.nexxtender_smart_charging_off_peak"}, blocking=True,
-    )
-    await _settle(hass)
-    assert p.parse_config(charger.config).mode == p.MODE_MAX_PRIVATE
-    assert _commands(charger) == []
-    assert _state(hass, "binary_sensor.nexxtender_off_peak_hours") == "off"
-
-    # 22:05 -> off-peak -> start.
-    clock["now"] = datetime(2026, 11, 18, 22, 5, tzinfo=tz)
-    smart.async_evaluate()
-    await _settle(hass)
-    assert _commands(charger) == [p.CMD_START_CHARGE_MAX]
-    assert _state(hass, "sensor.nexxtender_status") == "charging"
-
-    # Thursday 07:01 -> peak -> stop.
-    clock["now"] = datetime(2026, 11, 19, 7, 1, tzinfo=tz)
-    smart.async_evaluate()
-    await _settle(hass)
-    assert _commands(charger)[-1] == p.CMD_STOP_CHARGE
-    assert _state(hass, "sensor.nexxtender_status") == "plugged"
-
-    # "Charge now" overrides peak hours...
-    await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.nexxtender_charge_now"}, blocking=True,
-    )
-    await _settle(hass)
-    assert _commands(charger)[-1] == p.CMD_START_CHARGE_MAX
-
-    # ...until the car is unplugged.
-    charger.set_status("A")
-    await _settle(hass)
-    assert _state(hass, "switch.nexxtender_charge_now") == "off"
-    n = len(_commands(charger))
-    smart.async_evaluate()
-    await _settle(hass)
-    assert len(_commands(charger)) == n  # unplugged: nothing sent
-
-
-async def test_full_battery_limits_retries(hass, patched, charger):
-    from datetime import datetime
-
-    from homeassistant.util import dt as dt_util
-
-    entry = await _setup(hass)
-    smart = entry.runtime_data.smart
-    smart.now = lambda: datetime(2026, 11, 21, 12, 0, tzinfo=dt_util.get_default_time_zone())  # Saturday
-    mono = {"t": 1000.0}
-    smart.monotonic = lambda: mono["t"]
-    charger.reacts_to_start = False  # battery full: stays "plugged"
-    charger.set_status("B")
-    await _settle(hass)
-    charger.writes.clear()
-    await smart.async_set_enabled(True)
-    await _settle(hass)
-    for _ in range(20):
-        mono["t"] += 200
-        smart.async_evaluate()
-        await _settle(hass)
-    # Battery full: at most 3 start attempts, then it stops insisting.
-    assert _commands(charger) == [p.CMD_START_CHARGE_MAX] * 3
-
-
-async def test_smart_charging_off_does_nothing(hass, patched, charger):
-    entry = await _setup(hass)
-    charger.set_status("B")
-    await _settle(hass)
-    charger.writes.clear()
-    entry.runtime_data.smart.async_evaluate()
-    await _settle(hass)
-    assert _commands(charger) == []
-    assert p.parse_config(charger.config).mode == p.MODE_ECO_PRIVATE
 
 
 
@@ -659,10 +574,12 @@ async def test_device_registry_filled_without_deprecated_api(hass, patched, char
 
 async def test_clock_sync_without_success_status(hass, patched, charger):
     """Field log: 'Charger did not answer the clock write'. The charger may never
-    send 'time set success'; reading the clock back is enough."""
+    send 'time set success'; reading the clock back is enough. (Not used on
+    connect since 0.3.0, kept for when writes come back.)"""
     charger.sends_time_success = False
+    entry = await _setup(hass)
     with patch("custom_components.nexxtender_ble.client.TIME_CONFIRM_TIMEOUT", 0.05):
-        entry = await _setup(hass)
+        await entry.runtime_data.client.sync_time()
     data = entry.runtime_data.client.data
     assert charger.clock > 1_700_000_000
     assert data.charger_time is not None

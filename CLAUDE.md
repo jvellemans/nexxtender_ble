@@ -21,7 +21,19 @@ doubt) and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-bl
 - The charger advertises **without a name** (not "HOME"). It's picked by MAC address
   in the config flow.
 - The signal is weak, so disconnects happen.
-- Goal: HA decides when to charge, on a bi-hourly (day/night) tariff.
+- Long-term goal: HA decides when to charge, on a bi-hourly (day/night) tariff.
+
+## Current scope (since 0.3.0): read-only + Start/Stop
+
+The maintainer asked to start small: the integration **must not change any setting
+on the charger**. Allowed traffic: pairing, reads, read requests (bytes `02 50` config,
+`04 50` CBOR config, `02 40` clock read) and the two buttons, Start charging (`01 00`,
+charger's own mode) and Stop charging (`06 00`), only when pressed. No mode, current
+or clock writes, and nothing automatic. `test_connecting_never_writes_to_the_charger`
+guards this. Smart charging, the mode select, the current numbers and clock sync
+were removed in 0.3.0 (see git history before that version to bring them back).
+`client.set_config`, `set_cbor_values` and `sync_time` are kept, unused, for later.
+Don't add any write without the maintainer asking for it.
 
 ## Field findings (real charger); don't regress these
 
@@ -39,8 +51,8 @@ doubt) and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-bl
    (23:00 - 23:00 after UTC→local). It's unresolved whether the CBOR config holds
    the real values. CBOR is preferred when available. The user doesn't care (HA
    drives charging), so it's low priority.
-5. Not yet verified on the real charger: that "start charging (max)" (0x02 0x00)
-   starts a session in **Max private** mode. Smart charging depends on it.
+5. Not yet verified on the real charger: that the Start/Stop buttons start and stop
+   a session (Start uses 0x01 0x00, the charger's own mode).
 
 ## Architecture
 
@@ -49,8 +61,8 @@ doubt) and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-bl
 | `protocol.py` | Pure byte encoding/decoding (CRC-16/MODBUS, legacy config, CBOR config, data characteristics). **No HA imports.** |
 | `pairing.py` | BlueZ D-Bus pairing agent (`org.bluez.Agent1`, KeyboardOnly). **No `from __future__ import annotations`**: dbus-fast reads the D-Bus signatures from the annotations. Error classification: `InvalidPasskey` (only if the agent was asked for the PIN), `PairingInterrupted`, `PasskeyNotRequested`, `AuthenticationRequired`. |
 | `client.py` | One BLE connection: notifications, polling, request/ready/write/success handshakes on the generic command/status/data characteristics. `connected` = link up AND setup finished (`_ready`). |
-| `coordinator.py` | Reconnect loop with back-off, re-pair on `AuthenticationRequired`, reauth only on a real PIN rejection, daily clock sync, device-registry update (`async_get_or_create`; don't use the deprecated `async_get_device`). |
-| `smart_charging.py` + `tariff.py` | Off-peak charging: charger forced to Max private; start when plugged in and off-peak (or "Charge now"); stop when off-peak ends; at most 3 start attempts (full battery). Calendars: Brussels/Flanders (22–7 + weekend), Wallonia 2026 (22–7 + 11–17 daily), shifted 21–6 + weekend. Public holidays aren't handled. |
+| `coordinator.py` | Reconnect loop with back-off, re-pair on `AuthenticationRequired`, reauth only on a real PIN rejection, device-registry update (`async_get_or_create`; don't use the deprecated `async_get_device`). |
+| `__init__.py` | Platforms, and removal of the 0.2.x entities that wrote to the charger (`REMOVED_ENTITIES`). |
 | `diagnostics.py` | Raw payloads, CBOR values, schedules in both formats, last ~40 protocol exchanges, errors (PIN/serial redacted). The first thing to ask the user for when debugging. |
 
 ## Development
@@ -58,7 +70,7 @@ doubt) and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-bl
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install pytest-homeassistant-custom-component
-pytest            # protocol, tariff, D-Bus pairing (needs `dbus-daemon`), HA integration with a simulated charger
+pytest            # protocol, D-Bus pairing (needs `dbus-daemon`), HA integration with a simulated charger
 ```
 
 - `tests/test_integration.py::FakeCharger` simulates the charger's handshakes. Add a
@@ -76,8 +88,10 @@ pytest            # protocol, tariff, D-Bus pairing (needs `dbus-daemon`), HA in
 
 ## Open items
 
-- Confirm on the real charger that smart charging starts and stops sessions in Max private.
+- Confirm on the real charger that Start/Stop work and that the read values match
+  the Nexxtmove app.
 - Off-peak schedule decoding (finding 4); needs a diagnostics dump from the user.
-- Public holidays (the HA `holiday` integration could feed this).
-- Maybe: modulate the charging current instead of start/stop. Mind flash wear: every
-  config write goes to the charger's flash.
+- Later, only when the maintainer asks: bring back writes one at a time (mode,
+  smart charging with the off-peak calendars and public holidays, current
+  modulation). Mind flash wear: every config write goes to the charger's flash.
+  Never rewrite a setting in the background.
