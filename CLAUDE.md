@@ -53,6 +53,9 @@ Don't add any write without the maintainer asking for it.
    drives charging), so it's low priority.
 5. Not yet verified on the real charger: that the Start/Stop buttons start and stop
    a session (Start uses 0x01 0x00, the charger's own mode).
+6. 0.3.0 confirmed in the field: the connection holds, drops now and then (weak
+   signal) and **reconnects by itself**. 0.2.x no longer reconnected; keep the
+   read-only connect sequence (no clock/config write on connect).
 
 ## Architecture
 
