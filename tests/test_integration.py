@@ -52,6 +52,8 @@ class FakeCharger:
         self.encrypted = True  # False = stale pairing: charger refuses requests
         self.drop_during_subscribe = False
         self.sends_time_success = True
+        self.answers_cbor = True  # False = firmware without the CBOR config
+        self.drop_during_cbor_read = False
         self.disconnected_callback = None
 
     # bleak API -----------------------------------------------------------
@@ -87,6 +89,12 @@ class FakeCharger:
             if data == p.CMD_CONFIG_READ:
                 loop.call_soon(self._push, CHAR_GENERIC_DATA, self.config)
                 loop.call_soon(self._status, p.GS_CONFIG_READ_POPPED)
+            elif data == p.CMD_CBOR_CONFIG_READ and self.drop_during_cbor_read:
+                self.drop_during_cbor_read = False
+                self.is_connected = False
+                loop.call_soon(self.disconnected_callback, self)
+            elif data == p.CMD_CBOR_CONFIG_READ and not self.answers_cbor:
+                pass  # no answer at all
             elif data == p.CMD_CBOR_CONFIG_READ:
                 loop.call_soon(self._push, CHAR_GENERIC_DATA, _cbor(self.cbor_entries))
                 loop.call_soon(self._status, p.GS_CBOR_CONFIG_READ_POPPED)
@@ -586,3 +594,47 @@ async def test_clock_sync_without_success_status(hass, patched, charger):
     assert data.extra["info"]["time_set_confirmed"] is False
     assert data.extra["info"]["clock_drift_after_sync_s"] < 5
     assert "time_sync" not in data.extra.get("errors", {})
+
+
+async def test_notifications_from_an_old_connection_are_ignored(hass, patched, charger):
+    """Field diagnostics: every status was logged 2-5 times. After re-pairing,
+    bleak keeps the old connection's watcher, so each notification also arrives
+    through the old connection. Only the current connection may count."""
+    entry = await _setup(hass)
+    client = entry.runtime_data.client
+    old_status_callback = charger.callbacks[CHAR_GENERIC_STATUS]
+    client._client = FakeCharger()  # a newer connection replaced the old one
+    log_len = len(client.data.extra["status_log"])
+    old_status_callback(None, bytearray(p.GS_CONFIG_READ_POPPED.to_bytes(2, "little")))
+    assert len(client.data.extra["status_log"]) == log_len
+
+
+async def test_cbor_not_disabled_by_a_dropped_link(hass, patched, charger):
+    """Field diagnostics: cbor_supported was false after a disconnect during the
+    configuration read. A dropped link says nothing about CBOR support."""
+    charger.drop_during_cbor_read = True
+    entry = await _setup(hass)
+    client = entry.runtime_data.client
+    for _ in range(50):  # the coordinator reconnects and reads CBOR again
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.01)
+        if client.data.cbor is not None:
+            break
+    assert client.data.cbor_supported is True
+    assert _state(hass, "sensor.nexxtender_peak_consumption_limit") == "16"
+
+
+async def test_cbor_given_up_after_repeated_silence(hass, patched, charger):
+    """Firmware without the CBOR config: give up only after several misses."""
+    charger.answers_cbor = False
+    with patch("custom_components.nexxtender_ble.client.STATUS_TIMEOUT", 0.05):
+        entry = await _setup(hass)
+        client = entry.runtime_data.client
+        assert client.data.cbor_supported is None  # one miss is not enough
+        await client.refresh_config()
+        assert client.data.cbor_supported is None
+        await client.refresh_config()
+    assert client.data.cbor_supported is False
+    assert client.data.extra["info"]["cbor_read"] == "no answer (3x)"
+    # Legacy values still work.
+    assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"

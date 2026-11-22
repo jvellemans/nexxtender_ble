@@ -56,6 +56,18 @@ Don't add any write without the maintainer asking for it.
 6. 0.3.0 confirmed in the field: the connection holds, drops now and then (weak
    signal) and **reconnects by itself**. 0.2.x no longer reconnected; keep the
    read-only connect sequence (no clock/config write on connect).
+7. Diagnostics from the real charger (0.3.0): model 60211, firmware 2.53.2,
+   hardware A2, mode code 5 (Max open). Legacy config
+   `1410050600ec042c01000000007262`: week 1260–300, weekend 0–0 (minutes, UTC;
+   ESPHome adds a fixed +1 h, we use HA's time zone). CBOR read (`04 50`) got no
+   `0x5006` answer at least once; ESPHome falls back to legacy the same way.
+   0.3.0 wrongly marked CBOR unsupported when the link dropped during the read;
+   since 0.3.1 only 3 real "no answer" count. Whether this firmware supports CBOR
+   is still open (see `extra.info.cbor_read` in diagnostics).
+8. Every notification was delivered 2–5 times: after re-pairing (BlueZ
+   `RemoveDevice`) bleak keeps the old connection's device watcher, which keeps
+   forwarding notifications. `client._notification` drops anything that doesn't
+   come through the current `BleakClient`.
 
 ## Architecture
 

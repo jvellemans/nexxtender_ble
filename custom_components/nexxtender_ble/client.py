@@ -38,6 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 STATUS_TIMEOUT = 10.0
 TIME_CONFIRM_TIMEOUT = 3.0
 DATA_TIMEOUT = 3.0
+CBOR_MAX_MISSES = 3
 
 
 class NexxtenderError(Exception):
@@ -90,6 +91,7 @@ class NexxtenderClient:
         self._status_waiters: list[tuple[set[int], asyncio.Future[int]]] = []
         self._generic_data: bytes | None = None
         self._generic_data_event = asyncio.Event()
+        self._cbor_misses = 0
         self.disconnected_event = asyncio.Event()
         self.disconnected_event.set()
 
@@ -173,12 +175,14 @@ class NexxtenderClient:
         # not drop the connection. Nothing below writes to the charger.
         try:
             await self.refresh_config()
+            self.data.extra.get("errors", {}).pop("config", None)
         except NexxtenderError as err:
             self._record("errors", "config", str(err))
             _LOGGER.warning("Could not read Nexxtender configuration: %s", err)
         # Read-only: the clock is read, never set, on connect.
         try:
             await self.read_time()
+            self.data.extra.get("errors", {}).pop("time_read", None)
         except NexxtenderError as err:
             self._record("errors", "time_read", str(err))
             _LOGGER.debug("Could not read the Nexxtender clock: %s", err)
@@ -189,8 +193,9 @@ class NexxtenderClient:
         if client is not None:
             try:
                 await client.disconnect()
-            except BleakError as err:
-                _LOGGER.debug("Error while disconnecting: %s", err)
+            except Exception as err:  # noqa: BLE001
+                # BleakError, or a timeout/assertion on a link that is already gone.
+                _LOGGER.debug("Error while disconnecting: %r", err)
         self._fail_waiters(NotConnected("Disconnected"))
         self.disconnected_event.set()
         self._notify_listeners()
@@ -215,6 +220,22 @@ class NexxtenderClient:
                 ) from err
             raise NexxtenderError(f"Access check failed: {err}") from err
 
+    def _notification(
+        self, client: BleakClient, handler: Callable[[bytes], None]
+    ) -> Callable[[Any, bytearray], None]:
+        """Wrap a handler so only the current connection's notifications count.
+
+        When BlueZ forgets the device (re-pairing) before it reports the link as
+        down, bleak keeps the old connection's watcher: every notification then
+        arrives once per old connection too. Those copies are dropped here.
+        """
+
+        def _callback(_sender: Any, data: bytearray) -> None:
+            if client is self._client:
+                handler(bytes(data))
+
+        return _callback
+
     async def _subscribe(self) -> None:
         handlers = {
             CHAR_BASIC: self._handle_basic,
@@ -228,9 +249,7 @@ class NexxtenderClient:
             if client is None or not client.is_connected:
                 raise NotConnected("Connection lost during setup")
             try:
-                await client.start_notify(
-                    uuid, lambda _c, data, h=handler: h(bytes(data))
-                )
+                await client.start_notify(uuid, self._notification(client, handler))
             except (BleakError, ValueError) as err:
                 # An encryption error here usually means a stale/invalid bond.
                 if _is_auth_error(err):
@@ -413,11 +432,19 @@ class NexxtenderClient:
         await self._write(CHAR_GENERIC_COMMAND, p.CMD_CBOR_CONFIG_READ)
         try:
             await self._await_status(fut, "the CBOR configuration read")
+        except NotConnected:
+            # The link dropped: says nothing about CBOR support, try next time.
+            raise
         except NexxtenderError:
-            # Older firmware: only the legacy configuration exists.
-            _LOGGER.info("Charger does not support the CBOR configuration")
-            self.data.cbor_supported = False
+            # No answer. Older firmware only has the legacy configuration, but a
+            # weak link can also lose the answer: give up after a few misses.
+            self._cbor_misses += 1
+            self._record("info", "cbor_read", f"no answer ({self._cbor_misses}x)")
+            if self._cbor_misses >= CBOR_MAX_MISSES:
+                _LOGGER.info("Charger does not support the CBOR configuration")
+                self.data.cbor_supported = False
             return None
+        self._cbor_misses = 0
         raw = await self._await_generic_data()
         self._record("raw", "cbor_config", raw.hex())
         try:
@@ -427,6 +454,7 @@ class NexxtenderClient:
             return None
         self.data.cbor = cbor
         self.data.cbor_supported = True
+        self._record("info", "cbor_read", "ok")
         return cbor
 
     async def set_config(
