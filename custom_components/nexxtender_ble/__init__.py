@@ -17,7 +17,7 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
 ]
 
-# Entities that wrote to the charger, removed in 0.3.0 (read-only + start/stop).
+# Entities removed in later versions (0.3.0: everything that wrote to the charger).
 REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
     ("number", "max_car_charging_speed"),
     ("number", "max_available_capacity"),
@@ -32,6 +32,11 @@ REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
     ("button", "start_charge_eco"),
     ("button", "start_charge_auto"),
     ("button", "sync_time"),
+    # CBOR configuration sensors, removed in 0.3.4 (the CBOR request is gone).
+    ("sensor", "peak_consumption_limit"),
+    ("sensor", "min_car_charging_speed"),
+    ("sensor", "connection_type"),
+    ("sensor", "charging_phases"),
 )
 
 type NexxtenderConfigEntry = ConfigEntry[NexxtenderCoordinator]
@@ -57,6 +62,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: NexxtenderConfigEntry) 
 def _async_remove_old_entities(hass: HomeAssistant, entry: NexxtenderConfigEntry) -> None:
     registry = er.async_get(hass)
     address = entry.data[CONF_ADDRESS]
+    if "cbor_supported" in entry.data:  # flag saved by 0.3.3, no longer used
+        data = {k: v for k, v in entry.data.items() if k != "cbor_supported"}
+        hass.config_entries.async_update_entry(entry, data=data)
     for domain, key in REMOVED_ENTITIES:
         if entity_id := registry.async_get_entity_id(domain, DOMAIN, f"{address}_{key}"):
             registry.async_remove(entity_id)

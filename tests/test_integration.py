@@ -26,13 +26,6 @@ ADDRESS = "FB:11:22:33:44:55"
 BLE_DEVICE = BLEDevice(ADDRESS, "HOME", {"path": "/org/bluez/hci0/dev_FB_11_22_33_44_55"})
 
 
-def _cbor(entries):
-    out = bytearray(b"\x01") + bytes([0xB2])
-    for k, v in entries.items():
-        out += p._cbor_encode_int(k) + p._cbor_encode_int(v)
-    return p.with_crc(bytes(out))
-
-
 class FakeCharger:
     """Bleak-client look-alike that implements the Nexxtender handshakes."""
 
@@ -43,20 +36,15 @@ class FakeCharger:
         self.config = p.with_crc(
             struct.pack("<bbbbBhhhh", 25, 16, 0, 6, 0, 1320, 420, 0, 0)
         )
-        self.cbor_entries = {1: 0, 4: 25, 5: 16, 6: 6, 7: 6, 9: 3, 10: 3,
-                             12: 1320, 13: 420, 14: 0, 15: 0, 19: 16, 2: 1,
-                             3: 10, 8: 0, 11: 0, 16: 0, 17: 5}
         self.clock = 0
         self._pending = None
         self.reacts_to_start = True  # False = full battery, start is ignored
         self.encrypted = True  # False = stale pairing: charger refuses requests
         self.drop_during_subscribe = False
         self.sends_time_success = True
-        self.answers_cbor = True  # False = firmware without the CBOR config
         # True = BlueZ reuses a pairing the charger forgot: the charger drops
         # the link as soon as it's used (field log, 0.3.1).
         self.stale_bond_drops_link = False
-        self.drop_during_cbor_read = False
         self.disconnected_callback = None
 
     # bleak API -----------------------------------------------------------
@@ -99,21 +87,9 @@ class FakeCharger:
             if data == p.CMD_CONFIG_READ:
                 loop.call_soon(self._push, CHAR_GENERIC_DATA, self.config)
                 loop.call_soon(self._status, p.GS_CONFIG_READ_POPPED)
-            elif data == p.CMD_CBOR_CONFIG_READ and self.drop_during_cbor_read:
-                self.drop_during_cbor_read = False
-                self.is_connected = False
-                loop.call_soon(self.disconnected_callback, self)
-            elif data == p.CMD_CBOR_CONFIG_READ and not self.answers_cbor:
-                pass  # no answer at all
-            elif data == p.CMD_CBOR_CONFIG_READ:
-                loop.call_soon(self._push, CHAR_GENERIC_DATA, _cbor(self.cbor_entries))
-                loop.call_soon(self._status, p.GS_CBOR_CONFIG_READ_POPPED)
             elif data == p.CMD_CONFIG_SET:
                 self._pending = "config"
                 loop.call_soon(self._status, p.GS_CONFIG_SET_READY)
-            elif data == p.CMD_CBOR_CONFIG_SET:
-                self._pending = "cbor"
-                loop.call_soon(self._status, p.GS_CBOR_CONFIG_SET_READY)
             elif data == p.CMD_TIME_SET:
                 self._pending = "time"
                 loop.call_soon(self._status, p.GS_TIME_SET_READY)
@@ -129,9 +105,6 @@ class FakeCharger:
                 assert p.check_crc(data) and len(data) == 15
                 self.config = data
                 loop.call_soon(self._status, p.GS_CONFIG_SET_SUCCESS)
-            elif self._pending == "cbor":
-                self.cbor_entries = p.parse_cbor_config(data).values
-                loop.call_soon(self._status, p.GS_CBOR_CONFIG_SET_SUCCESS)
             elif self._pending == "time":
                 self.clock = p.parse_time(data)
                 if self.sends_time_success:
@@ -216,8 +189,7 @@ async def test_setup_reads_everything(hass, patched, charger):
     assert _state(hass, "sensor.nexxtender_car_power") == "7400"
     assert _state(hass, "sensor.nexxtender_mode") == "eco_private"
     assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"
-    assert _state(hass, "sensor.nexxtender_peak_consumption_limit") == "16"
-    assert _state(hass, "sensor.nexxtender_connection_type") == "tri"
+    assert hass.states.get("sensor.nexxtender_peak_consumption_limit") is None
     # The clock is read, not set.
     assert charger.clock == 0
     assert entry_clock(hass) is not None
@@ -228,7 +200,9 @@ def entry_clock(hass):
     return entry.runtime_data.client.data.charger_time
 
 
-READ_COMMANDS = {p.CMD_CONFIG_READ, p.CMD_CBOR_CONFIG_READ, p.CMD_TIME_READ}
+# Only these requests may be sent. The CBOR config read (04 50) is not one of them:
+# firmware 2.53.2 drops the link on it (removed in 0.3.4).
+READ_COMMANDS = {p.CMD_CONFIG_READ, p.CMD_TIME_READ}
 
 
 async def test_connecting_never_writes_to_the_charger(hass, patched, charger):
@@ -487,9 +461,6 @@ async def test_clock_fallback_and_diagnostics(hass, patched, charger):
         await orig(uuid, data, response)
 
     charger.write_gatt_char = no_time_read
-    # CBOR schedule differs from the legacy one: CBOR wins.
-    charger.cbor_entries[12] = 1260  # 21:00 UTC
-    charger.cbor_entries[13] = 300  # 05:00 UTC
     with patch("custom_components.nexxtender_ble.client.STATUS_TIMEOUT", 0.05):
         entry = await _setup(hass)
         for _ in range(30):
@@ -508,7 +479,7 @@ async def test_clock_fallback_and_diagnostics(hass, patched, charger):
 
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert diag["entry"][CONF_PASSKEY] == "**REDACTED**"
-    assert diag["schedules"]["cbor_minutes"]["week"] == [1260, 300]
+    assert "cbor" not in diag
     assert diag["schedules"]["legacy_minutes"]["week"] == [1320, 420]
     assert "config" in diag["extra"]["raw"]
     assert "time_read" in diag["extra"]["errors"]
@@ -619,49 +590,22 @@ async def test_notifications_from_an_old_connection_are_ignored(hass, patched, c
     assert len(client.data.extra["status_log"]) == log_len
 
 
-def _cbor_requests(charger):
-    return [d for u, d in charger.writes if u == CHAR_GENERIC_COMMAND and d == p.CMD_CBOR_CONFIG_READ]
+async def test_cbor_leftovers_are_cleaned_up(hass, patched, charger):
+    """0.3.4 removed the CBOR config entirely: the flag saved by 0.3.3 and the
+    4 CBOR sensors disappear, and the CBOR request (04 50) is never sent."""
+    from homeassistant.helpers import entity_registry as er
 
-
-async def test_cbor_request_that_drops_the_link_is_never_repeated(hass, patched, charger):
-    """Field (0.3.1): retrying the CBOR read on every connection kept the charger
-    (firmware 2.53.2) from staying connected: short bursts, then unavailable.
-    One failed CBOR read must disable it for good, even across restarts."""
-    charger.drop_during_cbor_read = True
-    entry = await _setup(hass)
-    client = entry.runtime_data.client
-    for _ in range(50):  # the coordinator reconnects
-        await hass.async_block_till_done()
-        await asyncio.sleep(0.01)
-        if client.connected and client.data.charger_time is not None:
-            break
-    assert client.connected
-    assert client.data.cbor_supported is False
-    assert len(_cbor_requests(charger)) == 1
-    assert entry.data["cbor_supported"] is False
-    assert client.data.extra["info"]["cbor_read"] == "link dropped"
-    # Legacy values still work.
-    assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"
-
-
-async def test_cbor_no_answer_is_not_asked_again(hass, patched, charger):
-    charger.answers_cbor = False
-    with patch("custom_components.nexxtender_ble.client.STATUS_TIMEOUT", 0.05):
-        entry = await _setup(hass)
-        client = entry.runtime_data.client
-        await client.refresh_config()
-    assert client.data.cbor_supported is False
-    assert len(_cbor_requests(charger)) == 1
-    assert client.data.extra["info"]["cbor_read"] == "no answer"
-
-
-async def test_cbor_disabled_entry_never_sends_the_request(hass, patched, charger):
-    """After a restart, the saved decision is used: no CBOR request at all."""
+    registry = er.async_get(hass)
     entry = MockConfigEntry(
         domain=DOMAIN, unique_id=ADDRESS,
         data={CONF_ADDRESS: ADDRESS, CONF_PASSKEY: "123456", "cbor_supported": False},
     )
     entry.add_to_hass(hass)
+    old = [
+        registry.async_get_or_create("sensor", DOMAIN, f"{ADDRESS}_{key}", config_entry=entry).entity_id
+        for key in ("peak_consumption_limit", "min_car_charging_speed",
+                    "connection_type", "charging_phases")
+    ]
     assert await hass.config_entries.async_setup(entry.entry_id)
     for _ in range(30):
         await hass.async_block_till_done()
@@ -669,7 +613,9 @@ async def test_cbor_disabled_entry_never_sends_the_request(hass, patched, charge
         if entry.runtime_data.client.data.charger_time is not None:
             break
     assert entry.runtime_data.client.connected
-    assert _cbor_requests(charger) == []
+    assert "cbor_supported" not in entry.data
+    assert all(registry.async_get(entity_id) is None for entity_id in old)
+    assert (CHAR_GENERIC_COMMAND, b"\x04\x50") not in charger.writes
     await hass.config_entries.async_unload(entry.entry_id)
 
 

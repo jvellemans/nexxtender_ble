@@ -57,8 +57,6 @@ class NexxtenderData:
     car: p.CarData | None = None
     advanced: p.AdvancedData | None = None
     config: p.Config | None = None
-    cbor: p.CborConfig | None = None
-    cbor_supported: bool | None = None
     generic_status: int | None = None
     charger_time: datetime | None = None
     model: str | None = None
@@ -77,13 +75,11 @@ class NexxtenderClient:
         passkey: int,
         ble_device_getter: Callable[[], BLEDevice | None],
         on_update: Callable[[], None] | None = None,
-        on_cbor_unsupported: Callable[[], None] | None = None,
     ) -> None:
         self.address = address
         self.passkey = passkey
         self._get_ble_device = ble_device_getter
         self._on_update = on_update or (lambda: None)
-        self._on_cbor_unsupported = on_cbor_unsupported or (lambda: None)
         self.data = NexxtenderData()
         self._client: BleakClient | None = None
         self._ready = False
@@ -423,7 +419,6 @@ class NexxtenderClient:
     async def refresh_config(self) -> None:
         async with self._cmd_lock:
             await self._read_config_locked()
-            await self._read_cbor_locked()
         self._notify_listeners()
 
     async def _read_config_locked(self) -> p.Config:
@@ -439,42 +434,6 @@ class NexxtenderClient:
             raise NexxtenderError(f"Invalid config {raw.hex()}: {err}") from err
         self.data.config = cfg
         return cfg
-
-    async def _read_cbor_locked(self) -> p.CborConfig | None:
-        if self.data.cbor_supported is False:
-            return None
-        self._reset_generic_data()
-        fut = self._expect_status({p.GS_CBOR_CONFIG_READ_POPPED})
-        await self._write(CHAR_GENERIC_COMMAND, p.CMD_CBOR_CONFIG_READ)
-        try:
-            await self._await_status(fut, "the CBOR configuration read")
-        except NexxtenderError as err:
-            # One try only. Older firmware (2.53.x) has no CBOR configuration and
-            # may even drop the link on this request: retrying it on every
-            # connection kept the charger from ever staying connected (0.3.1).
-            # The CBOR values are optional; the legacy config has the essentials.
-            lost = isinstance(err, NotConnected)
-            self._record("info", "cbor_read", "link dropped" if lost else "no answer")
-            _LOGGER.info(
-                "CBOR configuration not available (%s); not asking again",
-                "link dropped" if lost else "no answer",
-            )
-            self.data.cbor_supported = False
-            self._on_cbor_unsupported()
-            if lost:
-                raise
-            return None
-        raw = await self._await_generic_data()
-        self._record("raw", "cbor_config", raw.hex())
-        try:
-            cbor = p.parse_cbor_config(raw)
-        except p.ProtocolError as err:
-            _LOGGER.warning("Could not decode CBOR config %s: %s", raw.hex(), err)
-            return None
-        self.data.cbor = cbor
-        self.data.cbor_supported = True
-        self._record("info", "cbor_read", "ok")
-        return cbor
 
     async def set_config(
         self,
@@ -499,29 +458,6 @@ class NexxtenderClient:
             done = self._expect_status({p.GS_CONFIG_SET_SUCCESS})
             await self._write(CHAR_GENERIC_DATA, new)
             await self._await_status(done, "the configuration write")
-            await self._read_config_locked()
-            await self._read_cbor_locked()
-        self._notify_listeners()
-
-    async def set_cbor_values(self, updates: dict[int, int]) -> None:
-        """Change values in the CBOR configuration (e.g. peak consumption)."""
-        async with self._cmd_lock:
-            current = await self._read_cbor_locked()
-            if current is None:
-                raise NexxtenderError("This charger has no CBOR configuration")
-            try:
-                new = p.build_cbor_config(current, updates)
-            except p.ProtocolError as err:
-                raise NexxtenderError(str(err)) from err
-            if new == current.raw:
-                return
-            ready = self._expect_status({p.GS_CBOR_CONFIG_SET_READY})
-            await self._write(CHAR_GENERIC_COMMAND, p.CMD_CBOR_CONFIG_SET)
-            await self._await_status(ready, "the CBOR configuration write request")
-            done = self._expect_status({p.GS_CBOR_CONFIG_SET_SUCCESS})
-            await self._write(CHAR_GENERIC_DATA, new)
-            await self._await_status(done, "the CBOR configuration write")
-            await self._read_cbor_locked()
             await self._read_config_locked()
         self._notify_listeners()
 

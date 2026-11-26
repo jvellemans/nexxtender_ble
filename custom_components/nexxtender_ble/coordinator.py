@@ -19,7 +19,6 @@ from . import pairing
 from .client import NexxtenderClient, NexxtenderError, NotConnected
 from .const import (
     CONF_PASSKEY,
-    DATA_CBOR_SUPPORTED,
     DOMAIN,
     MANUFACTURER,
     OPT_KEEP_CONNECTED,
@@ -43,10 +42,7 @@ class NexxtenderCoordinator:
             int(entry.data[CONF_PASSKEY]),
             self._ble_device,
             self._async_notify,
-            self._async_cbor_unsupported,
         )
-        if entry.data.get(DATA_CBOR_SUPPORTED) is False:
-            self.client.data.cbor_supported = False
         self._listeners: list[Callable[[], None]] = []
         self._unsubs: list[CALLBACK_TYPE] = []
         self._wake = asyncio.Event()
@@ -70,14 +66,6 @@ class NexxtenderCoordinator:
     def async_notify_listeners(self) -> None:
         for update in list(self._listeners):
             update()
-
-    @callback
-    def _async_cbor_unsupported(self) -> None:
-        """Remember across restarts not to send the CBOR request again."""
-        if self.entry.data.get(DATA_CBOR_SUPPORTED) is not False:
-            self.hass.config_entries.async_update_entry(
-                self.entry, data={**self.entry.data, DATA_CBOR_SUPPORTED: False}
-            )
 
     @callback
     def _async_notify(self) -> None:

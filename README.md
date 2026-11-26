@@ -8,7 +8,7 @@ The protocol knowledge comes from the community reverse-engineering in
 [geertmeersman/nexxtender](https://github.com/geertmeersman/nexxtender) (ESPHome)
 and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-ble).
 
-> **Status: v0.3.3, read-only plus Start/Stop.** Pairing and connection confirmed
+> **Status: v0.3.4, read-only plus Start/Stop.** Pairing and connection confirmed
 > on a real Nexxtender Home (Bluetooth adapter passed through to the HA VM, weak
 > signal). To keep things safe while it's being tested, the integration doesn't
 > change any setting on the charger: it reads values and can only start or stop
@@ -23,7 +23,7 @@ and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-ble).
 | Binary sensors | Car plugged in, Charging, Bluetooth connected |
 | Buttons | Start charging, Stop charging, Refresh configuration |
 | Switch | Hold Bluetooth connection (turn off to let the phone app connect; this doesn't touch the charger) |
-| Diagnostics | Charger clock, off-peak schedules, max charging speed, max available capacity, offloading minimum, peak consumption limit, connection type, min charging speed, firmware |
+| Diagnostics | Charger clock, off-peak schedules, max charging speed, max available capacity, offloading minimum, firmware |
 
 Session energy can be added to the **Energy dashboard** as an EV charger consumption.
 
@@ -111,9 +111,8 @@ connection**, use the app, then turn the switch back on. HA reconnects within se
 ## Troubleshooting
 
 **Easiest:** *Settings → Devices & services → Nexxtender BLE → ⋮ → Download diagnostics*.
-The JSON contains the raw configuration payloads (legacy and CBOR), the off-peak
-minutes from both formats, the last ~40 protocol exchanges and any errors (the PIN
-and serial are redacted).
+The JSON contains the raw configuration payload, the off-peak minutes, the last ~40
+protocol exchanges and any errors (the PIN and serial are redacted).
 
 For live logs, enable debug logging in `configuration.yaml` and restart:
 ```yaml
@@ -149,7 +148,7 @@ logger:
 ## How it works (for the curious)
 
 - `protocol.py`: pure byte encoding/decoding (CRC-16/MODBUS, the legacy 15-byte
-  config, the CBOR config, the data characteristics). It has no HA imports and is
+  config, the data characteristics). It has no HA imports and is
   fully unit-tested.
 - `pairing.py`: HA's Bluetooth stack can only do "Just Works" pairing, and the
   Nexxtender needs a passkey. So the integration briefly registers its own BlueZ
@@ -165,5 +164,5 @@ logger:
 ### Running the tests
 ```bash
 pip install pytest-homeassistant-custom-component
-pytest          # 52 tests: protocol, D-Bus pairing (needs dbus-daemon), HA entities/flow
+pytest          # 42 tests: protocol, D-Bus pairing (needs dbus-daemon), HA entities/flow
 ```

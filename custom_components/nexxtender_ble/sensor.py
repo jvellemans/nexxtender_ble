@@ -51,25 +51,13 @@ def _cfg(field: str):
     return lambda d: getattr(d.config, field) if d.config else None
 
 
-def _cbor(key: int):
-    return lambda d: d.cbor.get(key) if d.cbor else None
-
-
-def _schedule(start: str, stop: str, cbor_start: int, cbor_stop: int):
-    """Format a time-of-use window; the charger stores minutes in UTC.
-
-    The CBOR configuration (newer firmware) is preferred; the legacy 15-byte
-    configuration is the fallback.
-    """
+def _schedule(start: str, stop: str):
+    """Format a time-of-use window; the charger stores minutes in UTC."""
 
     def _fn(d: NexxtenderData):
-        start_min = stop_min = None
-        if d.cbor is not None:
-            start_min, stop_min = d.cbor.get(cbor_start), d.cbor.get(cbor_stop)
-        if (start_min is None or stop_min is None) and d.config:
-            start_min, stop_min = getattr(d.config, start), getattr(d.config, stop)
-        if start_min is None or stop_min is None:
+        if d.config is None:
             return None
+        start_min, stop_min = getattr(d.config, start), getattr(d.config, stop)
         return f"{_utc_minutes_to_local(start_min)} - {_utc_minutes_to_local(stop_min)}"
 
     return _fn
@@ -179,8 +167,7 @@ SENSORS: tuple[NexxtenderSensorDescription, ...] = (
         icon="mdi:ev-station",
         device_class=SensorDeviceClass.ENUM,
         options=p.MODES,
-        value_fn=lambda d: (d.config.mode if d.config and d.config.mode else None)
-        or (p.cbor_mode(d.cbor) if d.cbor else None),
+        value_fn=lambda d: d.config.mode if d.config else None,
     ),
     NexxtenderSensorDescription(
         key="max_car_charging_speed",
@@ -207,48 +194,16 @@ SENSORS: tuple[NexxtenderSensorDescription, ...] = (
         value_fn=_cfg("i_min"),
     ),
     NexxtenderSensorDescription(
-        key="peak_consumption_limit",
-        translation_key="peak_consumption_limit",
-        device_class=SensorDeviceClass.CURRENT,
-        native_unit_of_measurement=A,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=_cbor(p.CBOR_I_CAPACITY),
-    ),
-    NexxtenderSensorDescription(
-        key="min_car_charging_speed",
-        translation_key="min_car_charging_speed",
-        device_class=SensorDeviceClass.CURRENT,
-        native_unit_of_measurement=A,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=_cbor(p.CBOR_I_EVSE_MIN),
-    ),
-    NexxtenderSensorDescription(
-        key="connection_type",
-        translation_key="connection_type",
-        device_class=SensorDeviceClass.ENUM,
-        options=p.CONNECTION_TYPES,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: p.cbor_connection_type(d.cbor) if d.cbor else None,
-    ),
-    NexxtenderSensorDescription(
-        key="charging_phases",
-        translation_key="charging_phases",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=_cbor(p.CBOR_CHARGING_PHASES),
-    ),
-    NexxtenderSensorDescription(
         key="week_schedule",
         translation_key="week_schedule",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=_schedule("week_start", "week_stop", p.CBOR_TOU_WEEK_START, p.CBOR_TOU_WEEK_STOP),
+        value_fn=_schedule("week_start", "week_stop"),
     ),
     NexxtenderSensorDescription(
         key="weekend_schedule",
         translation_key="weekend_schedule",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=_schedule(
-            "weekend_start", "weekend_stop", p.CBOR_TOU_WEEKEND_START, p.CBOR_TOU_WEEKEND_STOP
-        ),
+        value_fn=_schedule("weekend_start", "weekend_stop"),
     ),
     # --- diagnostics ---------------------------------------------------------
     NexxtenderSensorDescription(

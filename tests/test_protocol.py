@@ -92,50 +92,6 @@ def test_config_rejects_bad_crc_and_values():
         p.build_config(cfg, mode="turbo")
 
 
-def _cbor_payload(i_capacity=16):
-    # 18 integer entries, like the 0xB2 map the ESPHome client parses.
-    entries = {1: 0, 2: 1, 3: 10, 4: 25, 5: 16, 6: 6, 7: 6, 8: 0, 9: 0, 10: 3,
-               11: 123456, 12: 1320, 13: 420, 14: 0, 15: 0, 16: 0, 17: 5,
-               19: i_capacity}
-    out = bytearray(b"\x01\x02")  # unknown prefix bytes must be preserved
-    out += bytes([0xB2])
-    for k, v in entries.items():
-        out += p._cbor_encode_int(k) + p._cbor_encode_int(v)
-    return p.with_crc(bytes(out)), entries
-
-
-def test_cbor_parse():
-    raw, entries = _cbor_payload()
-    cfg = p.parse_cbor_config(raw)
-    assert cfg.values == entries
-    assert cfg.prefix == b"\x01\x02"
-    assert p.cbor_mode(cfg) == p.MODE_ECO_PRIVATE
-    assert p.cbor_connection_type(cfg) == p.CONNECTION_MONO_TRI_N
-
-
-@pytest.mark.parametrize("new_value", [10, 23, 24, 25, 40])
-def test_cbor_rewrite_changes_only_target(new_value):
-    raw, entries = _cbor_payload(i_capacity=16)
-    cfg = p.parse_cbor_config(raw)
-    new = p.build_cbor_config(cfg, {p.CBOR_I_CAPACITY: new_value})
-    assert p.check_crc(new)
-    cfg2 = p.parse_cbor_config(new)
-    assert cfg2.values == {**entries, 19: new_value}
-    assert cfg2.prefix == cfg.prefix
-
-
-def test_cbor_rewrite_noop_is_identical():
-    raw, _ = _cbor_payload()
-    cfg = p.parse_cbor_config(raw)
-    assert p.build_cbor_config(cfg, {19: 16}) == raw
-
-
-def test_cbor_refuses_unknown_key():
-    raw, _ = _cbor_payload()
-    with pytest.raises(p.ProtocolError):
-        p.build_cbor_config(p.parse_cbor_config(raw), {99: 1})
-
-
 def test_time_roundtrip():
     assert p.parse_time(p.encode_time(1763215800)) == 1763215800
 

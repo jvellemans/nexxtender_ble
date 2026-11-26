@@ -128,20 +128,6 @@
       "available_current": {
         "name": "Courant disponible"
       },
-      "min_car_charging_speed": {
-        "name": "Vitesse de charge minimale"
-      },
-      "connection_type": {
-        "name": "Type de raccordement",
-        "state": {
-          "mono_tri_n": "Mono / Tri+N",
-          "tri": "Tri",
-          "unknown": "Inconnu"
-        }
-      },
-      "charging_phases": {
-        "name": "Phases de charge"
-      },
       "week_schedule": {
         "name": "Heures creuses (semaine)"
       },
@@ -165,9 +151,6 @@
       },
       "offloading_minimum": {
         "name": "Minimum de délestage"
-      },
-      "peak_consumption_limit": {
-        "name": "Limite de pic de consommation"
       },
       "mode": {
         "name": "Mode",

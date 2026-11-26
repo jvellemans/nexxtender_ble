@@ -27,12 +27,12 @@ doubt) and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-bl
 
 The maintainer asked to start small: the integration **must not change any setting
 on the charger**. Allowed traffic: pairing, reads, read requests (bytes `02 50` config,
-`04 50` CBOR config, `02 40` clock read) and the two buttons, Start charging (`01 00`,
+`02 40` clock read) and the two buttons, Start charging (`01 00`,
 charger's own mode) and Stop charging (`06 00`), only when pressed. No mode, current
 or clock writes, and nothing automatic. `test_connecting_never_writes_to_the_charger`
 guards this. Smart charging, the mode select, the current numbers and clock sync
 were removed in 0.3.0 (see git history before that version to bring them back).
-`client.set_config`, `set_cbor_values` and `sync_time` are kept, unused, for later.
+`client.set_config` and `sync_time` are kept, unused, for later.
 Don't add any write without the maintainer asking for it.
 
 ## Field findings (real charger); don't regress these
@@ -47,10 +47,9 @@ Don't add any write without the maintainer asking for it.
    connect. A reconnect takes 15–30 s; that's expected.
 3. The charger **never sends 0x4002 "time set success"**. Clock sync treats it as
    optional and verifies by reading the clock back (0x4003), like ESPHome.
-4. The legacy 15-byte config shows the off-peak schedule as start == stop
-   (23:00 - 23:00 after UTC→local). It's unresolved whether the CBOR config holds
-   the real values. CBOR is preferred when available. The user doesn't care (HA
-   drives charging), so it's low priority.
+4. The legacy 15-byte config shows the off-peak schedule as start == stop for the
+   weekend (0–0 UTC, shown 01:00 - 01:00). Probably "whole day", unconfirmed. The
+   maintainer doesn't care (HA will drive charging), so it's low priority.
 5. Not yet verified on the real charger: that the Start/Stop buttons start and stop
    a session (Start uses 0x01 0x00, the charger's own mode).
 6. 0.3.0 confirmed in the field: the connection holds, drops now and then (weak
@@ -59,14 +58,14 @@ Don't add any write without the maintainer asking for it.
 7. Diagnostics from the real charger (0.3.0): model 60211, firmware 2.53.2,
    hardware A2, mode code 5 (Max open). Legacy config
    `1410050600ec042c01000000007262`: week 1260–300, weekend 0–0 (minutes, UTC;
-   ESPHome adds a fixed +1 h, we use HA's time zone). CBOR read (`04 50`) got no
-   `0x5006` answer at least once; ESPHome falls back to legacy the same way.
-   0.3.1 retried the CBOR read on every connection (a dropped link didn't count),
-   and the connection got much worse: short bursts, then unavailable for hours.
-   Likely this firmware drops the link on `04 50`. Since 0.3.3 the CBOR read is
-   tried **once**: any failure (no answer or link lost) disables it for good and
-   is saved in the config entry (`data.cbor_supported = False`). Don't make it
-   retry again. Deleting and re-adding the integration resets it.
+   ESPHome adds a fixed +1 h, we use HA's time zone).
+   **No CBOR config.** The newer CBOR config read (`04 50`, answer `0x5006`) never
+   worked on this charger, and retrying it on every connection (0.3.1) made the
+   connection much worse: short bursts, then unavailable for hours (this firmware
+   likely drops the link on it). Its only extra values were 4 installer settings
+   (peak consumption limit, min charging speed, phase count, connection type). The
+   maintainer asked to remove it completely: since 0.3.4 there is no CBOR code at
+   all. Don't bring it back; the legacy config has everything needed.
 8. Every notification was delivered 2–5 times: after re-pairing (BlueZ
    `RemoveDevice`) bleak keeps the old connection's device watcher, which keeps
    forwarding notifications. `client._notification` drops anything that doesn't
@@ -83,12 +82,12 @@ Don't add any write without the maintainer asking for it.
 
 | File | Role |
 |---|---|
-| `protocol.py` | Pure byte encoding/decoding (CRC-16/MODBUS, legacy config, CBOR config, data characteristics). **No HA imports.** |
+| `protocol.py` | Pure byte encoding/decoding (CRC-16/MODBUS, legacy 15-byte config, data characteristics). **No HA imports.** |
 | `pairing.py` | BlueZ D-Bus pairing agent (`org.bluez.Agent1`, KeyboardOnly). **No `from __future__ import annotations`**: dbus-fast reads the D-Bus signatures from the annotations. Error classification: `InvalidPasskey` (only if the agent was asked for the PIN), `PairingInterrupted`, `PasskeyNotRequested`, `AuthenticationRequired`. |
 | `client.py` | One BLE connection: notifications, polling, request/ready/write/success handshakes on the generic command/status/data characteristics. `connected` = link up AND setup finished (`_ready`). |
 | `coordinator.py` | Reconnect loop with back-off, re-pair on `AuthenticationRequired`, reauth only on a real PIN rejection, device-registry update (`async_get_or_create`; don't use the deprecated `async_get_device`). |
-| `__init__.py` | Platforms, and removal of the 0.2.x entities that wrote to the charger (`REMOVED_ENTITIES`). |
-| `diagnostics.py` | Raw payloads, CBOR values, schedules in both formats, last ~40 protocol exchanges, errors (PIN/serial redacted). The first thing to ask the user for when debugging. |
+| `__init__.py` | Platforms, and removal of entities from older versions (`REMOVED_ENTITIES`: 0.2.x writes, 0.3.x CBOR sensors) and of the `cbor_supported` flag 0.3.3 stored. |
+| `diagnostics.py` | Raw payloads, config and schedule minutes, last ~40 protocol exchanges, errors (PIN/serial redacted). The first thing to ask the user for when debugging. |
 
 ## Development
 

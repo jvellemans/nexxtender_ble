@@ -9,7 +9,6 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
 from . import NexxtenderConfigEntry
-from . import protocol as p
 from .const import CONF_PASSKEY
 
 TO_REDACT = {CONF_PASSKEY, "serial"}
@@ -38,14 +37,6 @@ async def async_get_config_entry_diagnostics(
             "week": [c.week_start, c.week_stop],
             "weekend": [c.weekend_start, c.weekend_stop],
         }
-    if data.cbor:
-        schedules["cbor_minutes"] = {
-            "week": [data.cbor.get(p.CBOR_TOU_WEEK_START), data.cbor.get(p.CBOR_TOU_WEEK_STOP)],
-            "weekend": [
-                data.cbor.get(p.CBOR_TOU_WEEKEND_START),
-                data.cbor.get(p.CBOR_TOU_WEEKEND_STOP),
-            ],
-        }
     return {
         "entry": async_redact_data(dict(entry.data), TO_REDACT),
         "options": dict(entry.options),
@@ -65,15 +56,6 @@ async def async_get_config_entry_diagnostics(
         "car": _plain(data.car),
         "advanced": _plain(data.advanced),
         "config": _plain(data.config),
-        "cbor_supported": data.cbor_supported,
-        "cbor": None
-        if data.cbor is None
-        else {
-            "raw": data.cbor.raw.hex(),
-            "prefix": data.cbor.prefix.hex(),
-            "trailer": data.cbor.trailer.hex(),
-            "values": data.cbor.values,
-        },
         "schedules": schedules,
         "generic_status": data.generic_status,
         "charger_time": data.charger_time.isoformat() if data.charger_time else None,
