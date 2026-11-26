@@ -619,35 +619,58 @@ async def test_notifications_from_an_old_connection_are_ignored(hass, patched, c
     assert len(client.data.extra["status_log"]) == log_len
 
 
-async def test_cbor_not_disabled_by_a_dropped_link(hass, patched, charger):
-    """Field diagnostics: cbor_supported was false after a disconnect during the
-    configuration read. A dropped link says nothing about CBOR support."""
+def _cbor_requests(charger):
+    return [d for u, d in charger.writes if u == CHAR_GENERIC_COMMAND and d == p.CMD_CBOR_CONFIG_READ]
+
+
+async def test_cbor_request_that_drops_the_link_is_never_repeated(hass, patched, charger):
+    """Field (0.3.1): retrying the CBOR read on every connection kept the charger
+    (firmware 2.53.2) from staying connected: short bursts, then unavailable.
+    One failed CBOR read must disable it for good, even across restarts."""
     charger.drop_during_cbor_read = True
     entry = await _setup(hass)
     client = entry.runtime_data.client
-    for _ in range(50):  # the coordinator reconnects and reads CBOR again
+    for _ in range(50):  # the coordinator reconnects
         await hass.async_block_till_done()
         await asyncio.sleep(0.01)
-        if client.data.cbor is not None:
+        if client.connected and client.data.charger_time is not None:
             break
-    assert client.data.cbor_supported is True
-    assert _state(hass, "sensor.nexxtender_peak_consumption_limit") == "16"
+    assert client.connected
+    assert client.data.cbor_supported is False
+    assert len(_cbor_requests(charger)) == 1
+    assert entry.data["cbor_supported"] is False
+    assert client.data.extra["info"]["cbor_read"] == "link dropped"
+    # Legacy values still work.
+    assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"
 
 
-async def test_cbor_given_up_after_repeated_silence(hass, patched, charger):
-    """Firmware without the CBOR config: give up only after several misses."""
+async def test_cbor_no_answer_is_not_asked_again(hass, patched, charger):
     charger.answers_cbor = False
     with patch("custom_components.nexxtender_ble.client.STATUS_TIMEOUT", 0.05):
         entry = await _setup(hass)
         client = entry.runtime_data.client
-        assert client.data.cbor_supported is None  # one miss is not enough
-        await client.refresh_config()
-        assert client.data.cbor_supported is None
         await client.refresh_config()
     assert client.data.cbor_supported is False
-    assert client.data.extra["info"]["cbor_read"] == "no answer (3x)"
-    # Legacy values still work.
-    assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"
+    assert len(_cbor_requests(charger)) == 1
+    assert client.data.extra["info"]["cbor_read"] == "no answer"
+
+
+async def test_cbor_disabled_entry_never_sends_the_request(hass, patched, charger):
+    """After a restart, the saved decision is used: no CBOR request at all."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS,
+        data={CONF_ADDRESS: ADDRESS, CONF_PASSKEY: "123456", "cbor_supported": False},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    for _ in range(30):
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.01)
+        if entry.runtime_data.client.data.charger_time is not None:
+            break
+    assert entry.runtime_data.client.connected
+    assert _cbor_requests(charger) == []
+    await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_link_dropped_with_reused_pairing_pairs_again(hass, patched, charger):

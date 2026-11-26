@@ -6,6 +6,8 @@ DOMAIN = "nexxtender_ble"
 MANUFACTURER = "Powerdale"
 
 CONF_PASSKEY = "passkey"
+# Stored in the config entry once the charger fails the CBOR config read.
+DATA_CBOR_SUPPORTED = "cbor_supported"
 OPT_KEEP_CONNECTED = "keep_connected"
 
 # The charger advertises under this local name.

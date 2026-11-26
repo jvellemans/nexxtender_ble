@@ -38,7 +38,6 @@ _LOGGER = logging.getLogger(__name__)
 STATUS_TIMEOUT = 10.0
 TIME_CONFIRM_TIMEOUT = 3.0
 DATA_TIMEOUT = 3.0
-CBOR_MAX_MISSES = 3
 
 
 class NexxtenderError(Exception):
@@ -78,11 +77,13 @@ class NexxtenderClient:
         passkey: int,
         ble_device_getter: Callable[[], BLEDevice | None],
         on_update: Callable[[], None] | None = None,
+        on_cbor_unsupported: Callable[[], None] | None = None,
     ) -> None:
         self.address = address
         self.passkey = passkey
         self._get_ble_device = ble_device_getter
         self._on_update = on_update or (lambda: None)
+        self._on_cbor_unsupported = on_cbor_unsupported or (lambda: None)
         self.data = NexxtenderData()
         self._client: BleakClient | None = None
         self._ready = False
@@ -91,7 +92,6 @@ class NexxtenderClient:
         self._status_waiters: list[tuple[set[int], asyncio.Future[int]]] = []
         self._generic_data: bytes | None = None
         self._generic_data_event = asyncio.Event()
-        self._cbor_misses = 0
         self.disconnected_event = asyncio.Event()
         self.disconnected_event.set()
 
@@ -448,19 +448,22 @@ class NexxtenderClient:
         await self._write(CHAR_GENERIC_COMMAND, p.CMD_CBOR_CONFIG_READ)
         try:
             await self._await_status(fut, "the CBOR configuration read")
-        except NotConnected:
-            # The link dropped: says nothing about CBOR support, try next time.
-            raise
-        except NexxtenderError:
-            # No answer. Older firmware only has the legacy configuration, but a
-            # weak link can also lose the answer: give up after a few misses.
-            self._cbor_misses += 1
-            self._record("info", "cbor_read", f"no answer ({self._cbor_misses}x)")
-            if self._cbor_misses >= CBOR_MAX_MISSES:
-                _LOGGER.info("Charger does not support the CBOR configuration")
-                self.data.cbor_supported = False
+        except NexxtenderError as err:
+            # One try only. Older firmware (2.53.x) has no CBOR configuration and
+            # may even drop the link on this request: retrying it on every
+            # connection kept the charger from ever staying connected (0.3.1).
+            # The CBOR values are optional; the legacy config has the essentials.
+            lost = isinstance(err, NotConnected)
+            self._record("info", "cbor_read", "link dropped" if lost else "no answer")
+            _LOGGER.info(
+                "CBOR configuration not available (%s); not asking again",
+                "link dropped" if lost else "no answer",
+            )
+            self.data.cbor_supported = False
+            self._on_cbor_unsupported()
+            if lost:
+                raise
             return None
-        self._cbor_misses = 0
         raw = await self._await_generic_data()
         self._record("raw", "cbor_config", raw.hex())
         try:
