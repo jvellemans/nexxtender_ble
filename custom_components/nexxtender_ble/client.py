@@ -129,11 +129,13 @@ class NexxtenderClient:
 
             # The charger seems to pair without bonding: a pairing that BlueZ
             # did not keep is useless for a new connection, so drop it first.
+            reused_pairing = False
             try:
                 paired, bonded = await pairing.async_get_state(self.address, device_path)
             except pairing.PairingError as err:
                 _LOGGER.debug("Cannot read the pairing state: %s", err)
             else:
+                reused_pairing = paired and bonded is not False
                 if paired and bonded is False:
                     _LOGGER.debug("Paired but not bonded: removing the stale pairing")
                     try:
@@ -163,10 +165,24 @@ class NexxtenderClient:
                 await self._read_initial(poll=False)
                 self._ready = True
                 await self.poll()
-            except AttributeError as err:
-                # The link dropped mid-setup (client reset by the callback).
+            except pairing.PairingError:
                 await self.disconnect()
-                raise NotConnected(f"Connection lost during setup: {err}") from err
+                raise
+            except (AttributeError, BleakError, NexxtenderError) as err:
+                # The link dropped mid-setup (AttributeError: client reset by the
+                # callback; "Characteristic ... was not found!": services gone).
+                link_lost = not self._link_up
+                await self.disconnect()
+                if reused_pairing and link_lost:
+                    # The charger forgets pairings: with a pairing BlueZ kept from
+                    # an earlier connection, it drops the link once it is used.
+                    # Reusing it again would loop forever; pair again instead.
+                    raise pairing.AuthenticationRequired(
+                        f"Link dropped right after reusing the existing pairing ({err})"
+                    ) from err
+                if link_lost:
+                    raise NotConnected(f"Connection lost during setup: {err}") from err
+                raise
             except Exception:
                 await self.disconnect()
                 raise

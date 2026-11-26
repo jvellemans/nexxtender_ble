@@ -53,6 +53,9 @@ class FakeCharger:
         self.drop_during_subscribe = False
         self.sends_time_success = True
         self.answers_cbor = True  # False = firmware without the CBOR config
+        # True = BlueZ reuses a pairing the charger forgot: the charger drops
+        # the link as soon as it's used (field log, 0.3.1).
+        self.stale_bond_drops_link = False
         self.drop_during_cbor_read = False
         self.disconnected_callback = None
 
@@ -66,6 +69,13 @@ class FakeCharger:
         self.callbacks[uuid] = callback
 
     async def read_gatt_char(self, uuid):
+        if self.stale_bond_drops_link:
+            from bleak.exc import BleakError
+
+            self.is_connected = False
+            if self.disconnected_callback:
+                self.disconnected_callback(self)
+            raise BleakError(f"Characteristic {uuid} was not found!")
         if not self.encrypted and uuid in (CHAR_ADVANCED, CHAR_BASIC):
             from bleak.exc import BleakError
 
@@ -638,3 +648,36 @@ async def test_cbor_given_up_after_repeated_silence(hass, patched, charger):
     assert client.data.extra["info"]["cbor_read"] == "no answer (3x)"
     # Legacy values still work.
     assert _state(hass, "sensor.nexxtender_maximum_car_charging_speed") == "16"
+
+
+async def test_link_dropped_with_reused_pairing_pairs_again(hass, patched, charger):
+    """Field log (0.3.1): 'is already paired', then 'disconnected', then
+    'Access check failed: Characteristic ...db was not found!', over and over.
+    BlueZ reused a pairing the charger had forgotten. The integration must
+    remove it and pair again with the PIN instead of reusing it forever."""
+    pair_mock, _ = patched
+    state = {"paired": True}
+    charger.stale_bond_drops_link = True
+
+    async def _pair(address, passkey, path=None, *a, **k):
+        state["paired"] = True  # a fresh pairing: the charger accepts it
+
+    async def _unpair(address, path=None):
+        state["paired"] = False
+        charger.stale_bond_drops_link = False
+
+    async def _get_state(address, path=None):
+        return state["paired"], True  # BlueZ: paired and bonded
+
+    pair_mock.side_effect = _pair
+    with patch("custom_components.nexxtender_ble.pairing.async_unpair", AsyncMock(side_effect=_unpair)) as unpair, \
+         patch("custom_components.nexxtender_ble.pairing.async_get_state", AsyncMock(side_effect=_get_state)):
+        entry = await _setup(hass)
+        for _ in range(30):
+            if entry.runtime_data.client.connected:
+                break
+            await asyncio.sleep(0.02)
+            await hass.async_block_till_done()
+        assert unpair.await_count == 1
+        assert entry.runtime_data.client.connected
+        assert _state(hass, "sensor.nexxtender_car_power") == "7400"

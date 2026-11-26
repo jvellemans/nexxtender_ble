@@ -68,6 +68,13 @@ Don't add any write without the maintainer asking for it.
    `RemoveDevice`) bleak keeps the old connection's device watcher, which keeps
    forwarding notifications. `client._notification` drops anything that doesn't
    come through the current `BleakClient`.
+9. Field log (0.3.1): "is already paired" → link dropped ~2.5 s later → "Access
+   check failed: Characteristic ...db was not found!", repeated every few minutes.
+   BlueZ kept a bond the charger had forgotten, so encryption failed and the charger
+   dropped the link; the generic error path reused the same bond forever. Since
+   0.3.2, a link lost during setup after reusing an existing pairing raises
+   `AuthenticationRequired`, so the coordinator unpairs and pairs again
+   (`test_link_dropped_with_reused_pairing_pairs_again`).
 
 ## Architecture
 
