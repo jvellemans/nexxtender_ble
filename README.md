@@ -8,7 +8,7 @@ The protocol knowledge comes from the community reverse-engineering in
 [geertmeersman/nexxtender](https://github.com/geertmeersman/nexxtender) (ESPHome)
 and [toSvenson/nexxtender-ble](https://github.com/toSvenson/nexxtender-ble).
 
-> **Status: v0.3.4, read-only plus Start/Stop.** Pairing and connection confirmed
+> **Status: v0.3.5, read-only plus Start/Stop.** Pairing and connection confirmed
 > on a real Nexxtender Home (Bluetooth adapter passed through to the HA VM, weak
 > signal). To keep things safe while it's being tested, the integration doesn't
 > change any setting on the charger: it reads values and can only start or stop
@@ -164,5 +164,5 @@ logger:
 ### Running the tests
 ```bash
 pip install pytest-homeassistant-custom-component
-pytest          # 42 tests: protocol, D-Bus pairing (needs dbus-daemon), HA entities/flow
+pytest          # 43 tests: protocol, D-Bus pairing (needs dbus-daemon), HA entities/flow
 ```

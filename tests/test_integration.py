@@ -650,3 +650,36 @@ async def test_link_dropped_with_reused_pairing_pairs_again(hass, patched, charg
         assert unpair.await_count == 1
         assert entry.runtime_data.client.connected
         assert _state(hass, "sensor.nexxtender_car_power") == "7400"
+
+
+async def test_reused_pairing_detected_by_the_pairing_step(hass, patched, charger):
+    """Field log (Nov 28): 'is already paired', link dropped, then only a plain
+    'Connection failed: Access check failed ... not found', no re-pairing. The
+    pairing state query before connecting can fail; the pairing step's own
+    'already paired' answer must be enough to trigger a fresh pairing."""
+    pair_mock, _ = patched
+    state = {"paired": True}
+    charger.stale_bond_drops_link = True
+
+    async def _pair(address, passkey, path=None, *a, **k):
+        if state["paired"]:
+            return False  # "is already paired": BlueZ reused its bond
+        state["paired"] = True
+        return True
+
+    async def _unpair(address, path=None):
+        state["paired"] = False
+        charger.stale_bond_drops_link = False
+
+    pair_mock.side_effect = _pair
+    with patch("custom_components.nexxtender_ble.pairing.async_unpair", AsyncMock(side_effect=_unpair)) as unpair, \
+         patch("custom_components.nexxtender_ble.pairing.async_get_state",
+               AsyncMock(side_effect=pairing.PairingError("BlueZ does not know the device"))):
+        entry = await _setup(hass)
+        for _ in range(30):
+            if entry.runtime_data.client.connected:
+                break
+            await asyncio.sleep(0.02)
+            await hass.async_block_till_done()
+        assert unpair.await_count == 1
+        assert entry.runtime_data.client.connected

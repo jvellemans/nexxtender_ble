@@ -152,7 +152,14 @@ class NexxtenderClient:
             self.disconnected_event.clear()
             try:
                 # Pair with the passkey (no-op when BlueZ reports it as paired).
-                await pairing.async_pair(self.address, self.passkey, device_path)
+                paired_now = await pairing.async_pair(
+                    self.address, self.passkey, device_path
+                )
+                if paired_now is False:
+                    # BlueZ kept a pairing from an earlier connection. This is
+                    # what the pairing step itself saw, so it doesn't depend on
+                    # the state query above having worked.
+                    reused_pairing = True
                 # The charger answers unencrypted requests with "Unlikely Error",
                 # which BlueZ does not treat as "please encrypt". Check access
                 # explicitly so a stale pairing is detected and redone.

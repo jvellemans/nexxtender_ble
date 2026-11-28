@@ -77,6 +77,11 @@ Don't add any write without the maintainer asking for it.
    0.3.2, a link lost during setup after reusing an existing pairing raises
    `AuthenticationRequired`, so the coordinator unpairs and pairs again
    (`test_link_dropped_with_reused_pairing_pairs_again`).
+   Field log (Nov 28) still showed "already paired" → drop → plain "Connection
+   failed", no re-pairing: the reuse detection relied only on `async_get_state`
+   (queried before connecting). Since 0.3.5 `pairing.async_pair` returns False
+   when BlueZ already had a pairing, and that alone marks the pairing as reused
+   (`test_reused_pairing_detected_by_the_pairing_step`).
 
 ## Architecture
 

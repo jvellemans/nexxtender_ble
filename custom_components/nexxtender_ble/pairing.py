@@ -220,7 +220,10 @@ async def async_is_paired(address, preferred_path=None):
 
 
 async def async_pair(address, passkey, preferred_path=None, pair_timeout=45.0):
-    """Pair ``address`` with BlueZ using ``passkey``. No-op if already paired."""
+    """Pair ``address`` with BlueZ using ``passkey``.
+
+    Returns True after a new pairing, False if BlueZ already had one (no-op).
+    """
     if not 0 <= int(passkey) <= 999999:
         raise PairingError("The PIN must be 6 digits")
 
@@ -231,7 +234,7 @@ async def async_pair(address, passkey, preferred_path=None, pair_timeout=45.0):
         device_path, props = await _find_device_path(bus, address, preferred_path)
         if props.get("Paired", Variant("b", False)).value:
             _LOGGER.debug("%s is already paired", address)
-            return
+            return False
 
         agent = _PasskeyAgent(device_path, int(passkey))
         bus.export(agent_path, agent)
@@ -260,8 +263,10 @@ async def async_pair(address, passkey, preferred_path=None, pair_timeout=45.0):
                 and reply.error_name == "org.bluez.Error.AlreadyExists"
             ):
                 _LOGGER.debug("%s: BlueZ reports already paired", address)
+                already = True
             else:
                 _raise_for_pair_error(reply, agent)
+                already = False
             # Trust the device so BlueZ does not ask again on reconnect.
             reply = await _call(
                 bus,
@@ -273,7 +278,10 @@ async def async_pair(address, passkey, preferred_path=None, pair_timeout=45.0):
             )
             if reply.message_type == MessageType.ERROR:
                 _LOGGER.debug("Could not set Trusted: %s", reply.error_name)
+            if already:
+                return False
             _LOGGER.info("Paired with Nexxtender %s", address)
+            return True
         finally:
             await _call(
                 bus, "/org/bluez", AGENT_MANAGER_IFACE, "UnregisterAgent", "o", [agent_path]
